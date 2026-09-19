@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
+    "dev": "vite --host",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --host 127.0.0.1",
+    "preview": "vite preview --host",
     "test": "node --experimental-strip-types --test src/scene/timeline.test.ts",
     "test:browser": "node scripts/check-browser.mjs",
     "test:lifecycle": "node scripts/check-lifecycle.mjs"

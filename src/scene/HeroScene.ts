@@ -39,6 +39,8 @@ export function mountHeroScene(container: HTMLElement, options: {
   function resize(){
     const {width,height}=container.getBoundingClientRect();
     if(!width||!height)return;
+    const isCompact = matchMedia('(max-width: 760px)').matches;
+    if (!degraded) renderer.setPixelRatio(Math.min(devicePixelRatio, isCompact ? 1.35 : 1.75));
     renderer.setSize(width,height,false);
     const aspect=width/height;
     const halfHeight=Math.max(6.8,8.8/aspect);

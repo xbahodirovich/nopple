@@ -48,7 +48,7 @@ function scheduleScroll() {
 function measure() {
   // On short/mobile screens the heading scrolls away before the scene pins.
   // No wheel/touch interception: the browser owns scrolling in both directions.
-  const compact = matchMedia('(max-width: 760px)').matches;
+  const compact = matchMedia('(max-width: 760px), (max-height: 550px)').matches;
   const visualTop = visual.getBoundingClientRect().top - hero.getBoundingClientRect().top;
   const top = compact
     ? Math.min(0, Math.max(24, (innerHeight - visual.offsetHeight) / 2) - visualTop)
