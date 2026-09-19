@@ -95,18 +95,39 @@ export class MoppleProjectEngine {
   #now: () => string;
   #onError: (error: unknown) => void;
 
+  #undoStack: MoppleProject[] = [];
+  #redoStack: MoppleProject[] = [];
+  #historyListeners = new Set<() => void>();
+
   constructor(project: unknown = createProject(), options: EngineOptions = {}) {
     this.#project = validateProject(project);
     this.#now = options.now ?? nowISO;
     this.#onError = options.onSubscriberError ?? (error => console.error('Mopple subscriber failed', error));
   }
   getSnapshot(): MoppleProject { return structuredClone(this.#project); }
+  get canUndo(): boolean { return this.#undoStack.length > 0; }
+  get canRedo(): boolean { return this.#redoStack.length > 0; }
   subscribe(listener: Listener): () => void {
     this.#listeners.add(listener);
     return () => { this.#listeners.delete(listener); };
   }
-  #commit(project: MoppleProject) {
+  subscribeHistory(listener: () => void): () => void {
+    this.#historyListeners.add(listener);
+    return () => { this.#historyListeners.delete(listener); };
+  }
+  #notifyHistory() {
+    for (const listener of this.#historyListeners) {
+      try { listener(); } catch { /* ignore listener errors */ }
+    }
+  }
+  #commit(project: MoppleProject, recordHistory = true) {
     if (this.#notifying) reject('engine', 'Cannot edit from a notification; schedule a new operation instead');
+    if (recordHistory) {
+      this.#undoStack.push(this.getSnapshot());
+      if (this.#undoStack.length > 50) this.#undoStack.shift();
+      this.#redoStack = [];
+      this.#notifyHistory();
+    }
     this.#project = project;
     this.#notifying = true;
     try {
@@ -116,8 +137,34 @@ export class MoppleProjectEngine {
       }
     } finally { this.#notifying = false; }
   }
-  loadProject(input: unknown): void { this.#commit(validateProject(input)); }
-  importProject(json: string): void { this.#commit(parseProject(json)); }
+  undo(): boolean {
+    if (this.#undoStack.length === 0) return false;
+    const previous = this.#undoStack.pop()!;
+    this.#redoStack.push(this.getSnapshot());
+    this.#commit(previous, false);
+    this.#notifyHistory();
+    return true;
+  }
+  redo(): boolean {
+    if (this.#redoStack.length === 0) return false;
+    const next = this.#redoStack.pop()!;
+    this.#undoStack.push(this.getSnapshot());
+    this.#commit(next, false);
+    this.#notifyHistory();
+    return true;
+  }
+  clearHistory(): void {
+    this.#undoStack = [];
+    this.#redoStack = [];
+    this.#notifyHistory();
+  }
+  loadProject(input: unknown): void {
+    this.#commit(validateProject(input), false);
+    this.clearHistory();
+  }
+  importProject(json: string): void {
+    this.#commit(parseProject(json), true);
+  }
   saveProject(): string { return JSON.stringify(this.#project, null, 2) + '\n'; }
   applyOperations(input: unknown): void {
     const { operations } = validateOperations(input);

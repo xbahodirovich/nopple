@@ -182,3 +182,34 @@ test('file helpers safely export, import, and reject bad filenames and oversized
   ]) await assert.rejects(importMoppleFile(other, input), MoppleValidationError);
   assert.equal(other.saveProject(), before);
 });
+
+test('engine undo and redo accurately rewind and replay state and notify history listeners', () => {
+  const e = engine();
+  assert.equal(e.canUndo, false);
+  assert.equal(e.canRedo, false);
+  let historyNotified = 0;
+  e.subscribeHistory(() => { historyNotified++; });
+
+  const initialWall = e.getSnapshot().building.walls.find(w => w.id === 'wall_center_n')!;
+  e.moveWall('wall_center_n', { x: 1.6, z: -4 }, { x: 1.6, z: 0 });
+  assert.equal(e.canUndo, true);
+  assert.equal(e.canRedo, false);
+  assert.ok(historyNotified > 0);
+
+  const movedWall = e.getSnapshot().building.walls.find(w => w.id === 'wall_center_n')!;
+  assert.equal(movedWall.start.x, 1.6);
+
+  // Undo
+  const undoResult = e.undo();
+  assert.equal(undoResult, true);
+  assert.equal(e.canUndo, false);
+  assert.equal(e.canRedo, true);
+  assert.deepEqual(e.getSnapshot().building.walls.find(w => w.id === 'wall_center_n')!.start, initialWall.start);
+
+  // Redo
+  const redoResult = e.redo();
+  assert.equal(redoResult, true);
+  assert.equal(e.canUndo, true);
+  assert.equal(e.canRedo, false);
+  assert.equal(e.getSnapshot().building.walls.find(w => w.id === 'wall_center_n')!.start.x, 1.6);
+});
