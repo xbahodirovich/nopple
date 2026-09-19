@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-09-19T09:32:31.195Z",
+        "reason": "Project design.md explicitly names Inter as the PPNeueMontreal substitute; the user instructed preserving that typography system."
+      }
+    ]
+  }
+}

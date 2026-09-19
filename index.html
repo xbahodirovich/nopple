@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="description" content="Meet Mopple. A new way to bring your home to life with AI-powered architecture, interior design, and 3D visualization." />
+    <link rel="icon" type="image/png" href="/mopple-icon.png" />
+    <title>Mopple — A home, imagined by you.</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="header wrap">
+      <a class="wordmark" href="#" aria-label="Mopple home"><img src="/mopple-logo.png" alt="Mopple" width="1536" height="1024" /></a>
+      <nav aria-label="Main navigation">
+        <a href="#possibilities">The possibilities</a>
+        <a href="#start">What’s next <span aria-hidden="true">↗</span></a>
+      </nav>
+    </header>
+    <main id="main">
+      <div class="hero-story" id="hero-story">
+      <section class="hero wrap" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <h1 id="hero-title">A home,<br />imagined<br /> by <span>you.</span></h1>
+          <p>From the first floor plan to the final feeling.<br class="desktop-break" /> Bring your home to life with AI.</p>
+          <a class="button" href="#start">Design your first home <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg></a>
+          <p class="hero-note">Architecture. Interior. 3D. All connected.</p>
+        </div>
+        <div class="hero-visual" id="demo">
+          <div class="scene-heading"><span class="status-dot" aria-hidden="true"></span><span>One home. Every perspective.</span><span class="demo-label">MOPPLE STUDY / 001</span></div>
+          <div class="scene-viewport" id="scene-viewport" role="img" aria-label="Demonstration of the same modern home transitioning from a 3D exterior to a furnished interior and architectural floor plan">
+            <div id="fallback" class="fallback"></div>
+            <span class="loading" id="loading" role="status">Preparing your perspective…</span>
+          </div>
+          <div class="scene-caption"><span id="stage-description">See the whole picture.</span><span class="sample-label">Illustrative home · 80 m²</span></div>
+          <div class="scene-controls">
+            <div class="stage-buttons" role="group" aria-label="Choose a house view">
+              <button class="stage-button" data-stage="0" aria-pressed="true"><span class="stage-number">01</span><span>3D home</span><span class="stage-progress"></span></button>
+              <button class="stage-button" data-stage="1" aria-pressed="false"><span class="stage-number">02</span><span>Interior</span><span class="stage-progress"></span></button>
+              <button class="stage-button" data-stage="2" aria-pressed="false"><span class="stage-number">03</span><span>Architecture</span><span class="stage-progress"></span></button>
+            </div>
+            <span class="scroll-hint" id="scroll-hint">Scroll to explore <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16m-5-5 5 5 5-5" /></svg></span>
+          </div>
+        </div>
+        <a class="scroll-link" href="#possibilities"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16m-5-5 5 5 5-5" /></svg> Scroll to explore your home</a>
+      </section>
+      </div>
+      <section class="possibilities wrap" id="possibilities" aria-labelledby="possibilities-title">
+        <div><h2 id="possibilities-title">Every detail.<br />One vision.</h2><p class="section-intro">A home is more than a floor plan.<br />It’s how everything comes together.</p></div>
+        <div class="capabilities">
+          <a href="#demo" data-view="2"><span class="capability-number">01</span><div><h3>Give your ideas structure.</h3><p>Shape the layout. Connect the rooms. Imagine a home that fits the way you live.</p><span class="text-link">Architecture design <span aria-hidden="true">↗</span></span></div></a>
+          <a href="#demo" data-view="1"><span class="capability-number">02</span><div><h3>Make it feel like you.</h3><p>Explore materials, furniture, and the little details that make a space your own.</p><span class="text-link">Interior design <span aria-hidden="true">↗</span></span></div></a>
+          <a href="#demo" data-view="0"><span class="capability-number">03</span><div><h3>See it all come to life.</h3><p>Experience your home in 3D. See how every decision belongs to the bigger picture.</p><span class="text-link">3D visualization <span aria-hidden="true">↗</span></span></div></a>
+        </div>
+      </section>
+      <section class="start wrap" id="start" aria-labelledby="start-title">
+        <h2 id="start-title">Your next chapter.<br /><span>Your own space.</span></h2>
+        <div class="start-copy"><p>Mopple is taking shape.</p><p>Our AI home design tools are coming soon. For now, explore the possibilities with our demonstration home.</p><a class="button" href="#demo" data-view="2">Explore the demonstration <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg></a></div>
+      </section>
+    </main>
+    <footer class="wrap footer"><a class="wordmark" href="#" aria-label="Mopple home"><img src="/mopple-logo.png" alt="Mopple" width="1536" height="1024" /></a><span>A home, imagined by you.</span><span>© <span id="year">2026</span> Mopple</span></footer>
+    <noscript><p class="noscript">Mopple brings architecture, interior design, and 3D together. Enable JavaScript to explore the demonstration house.</p></noscript>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
