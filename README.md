@@ -5,7 +5,11 @@ npm install
 npm run dev
 ```
 
-`npm run build` type-checks and builds into `dist/`. `npm run preview` serves that build. `npm test` checks the continuous animation timeline.
+`npm run build` type-checks and builds into `dist/`. `npm run preview` serves that build. `npm test` checks the continuous animation timeline and the Mopple project engine.
+
+## Mopple project foundation
+
+The renderer-independent `.mopple` format, runtime validation, atomic project engine, AI operations, shared data adapters and import/export helpers live in `src/project/`. See [the format and integration handoff](docs/mopple-format.md) and [the example house](examples/modern-house.mopple). This is the core foundation only: the landing demo remains procedural; editors, renderer wiring, file controls and AI integration are the next stage.
 
 With the development server running, `npm run test:browser` checks four viewport widths, forward/reverse scrolling, pinned scene visibility, stage selection, reduced motion, CTA links, and WebGL fallback. `npm run test:lifecycle` checks pixel-identical scroll reversal, idle/offscreen rendering suspension, and context loss. Browser checks require Playwright Chromium (`npx playwright install chromium` if not already installed). Screenshots are written to `.impeccable/review/`.
 

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { createHouse } from './HouseModel';
-import { sampleScroll, STATES, type HouseState, type Stage } from './timeline';
+import { sampleScroll, STATES, STAGE_PROGRESS, type HouseState, type Stage } from './timeline';
 
 export interface SceneControls {
   setProgress(progress: number): void;
@@ -33,7 +33,7 @@ export function mountHeroScene(container: HTMLElement, options: {
   const fill = new THREE.DirectionalLight('#b6ddd2',1.5);fill.position.set(8,6,-5);scene.add(fill);
   const house = createHouse(); scene.add(house.root);
   let reduced = options.reduced, visible = true, disposed = false, dirty = true;
-  let progress = 0, lastRender = 0, state: HouseState = { ...STATES[0] }, stage: Stage = 0;
+  let targetProgress = 0, currentProgress = 0, lastRender = 0, state: HouseState = { ...STATES[0] }, stage: Stage = 0;
   let slowFrames = 0, frames = 0, degraded = false;
   const target=new THREE.Vector3();
   function resize(){
@@ -51,7 +51,7 @@ export function mountHeroScene(container: HTMLElement, options: {
     if(disposed)return;
     house.update(state);
     const elevation=.58+state.interior*.36+state.plan*(Math.PI/2-.941);
-    const azimuth=.67*(1-state.plan)+(!reduced?Math.sin(progress*Math.PI)*.035*(1-state.plan):0);
+    const azimuth=.67*(1-state.plan)+(!reduced?Math.sin(currentProgress*Math.PI)*.035*(1-state.plan):0);
     const radius=22;
     target.set(0,.6*(1-state.plan),0);
     camera.position.set(Math.sin(azimuth)*Math.cos(elevation)*radius,Math.sin(elevation)*radius,Math.cos(azimuth)*Math.cos(elevation)*radius);
@@ -63,20 +63,36 @@ export function mountHeroScene(container: HTMLElement, options: {
   function changeStage(next:Stage){if(next!==stage){stage=next;options.onStage(next);}}
   function tick(time: number) {
     if (disposed || !visible || document.hidden) return;
-    if (time - lastRender < (degraded ? 1000 / 24 : 1000 / 30)) return;
+    const delta = lastRender ? Math.min(0.1, (time - lastRender) / 1000) : 0.016;
+    if (degraded && delta < 1 / 30) return;
     lastRender = time;
-    if (dirty) {
-      dirty = false;
-      const start = performance.now();
-      render();
-      if (performance.now() - start > 32) slowFrames++;
-      if (++frames === 90 && slowFrames > 18 && !degraded) {
-        degraded = true;
-        renderer.setPixelRatio(1);
-        renderer.shadowMap.enabled = false;
-        resize();
+
+    if (reduced) {
+      currentProgress = targetProgress;
+    } else {
+      const diff = targetProgress - currentProgress;
+      if (Math.abs(diff) < 0.0005) {
+        currentProgress = targetProgress;
+      } else {
+        currentProgress += diff * (1 - Math.exp(-35 * delta));
       }
     }
+
+    const sample = sampleScroll(currentProgress);
+    state = sample.state;
+    changeStage(sample.stage);
+
+    const start = performance.now();
+    render();
+    if (performance.now() - start > 32) slowFrames++;
+    if (++frames === 90 && slowFrames > 18 && !degraded) {
+      degraded = true;
+      renderer.setPixelRatio(1);
+      renderer.shadowMap.enabled = false;
+      resize();
+    }
+
+    dirty = currentProgress !== targetProgress;
     if (!dirty) renderer.setAnimationLoop(null);
   }
   // Scroll events only invalidate. There is no timer or render loop while idle.
@@ -100,24 +116,29 @@ export function mountHeroScene(container: HTMLElement, options: {
   resize();sync();container.classList.add('is-ready');
   return {
     setProgress(next) {
-      if (reduced) return;
       const clamped = Math.min(1, Math.max(0, next));
-      if (clamped === progress) return;
-      progress = clamped;
-      const sample = sampleScroll(progress);
-      state = sample.state;
-      changeStage(sample.stage);
+      if (reduced) {
+        targetProgress = currentProgress = clamped;
+        const sample = sampleScroll(currentProgress);
+        state = sample.state;
+        changeStage(sample.stage);
+        invalidate();
+        return;
+      }
+      if (clamped === targetProgress && currentProgress === targetProgress) return;
+      targetProgress = clamped;
       invalidate();
     },
     select(next) {
-      // Reduced-motion visitors use explicit, static viewpoints.
+      targetProgress = currentProgress = STAGE_PROGRESS[next];
       state = { ...STATES[next] };
       changeStage(next);
       invalidate();
     },
     setReducedMotion(next) {
       reduced = next;
-      const sample = sampleScroll(progress);
+      currentProgress = targetProgress;
+      const sample = sampleScroll(currentProgress);
       state = reduced ? { ...STATES[stage] } : sample.state;
       if (!reduced) changeStage(sample.stage);
       invalidate();

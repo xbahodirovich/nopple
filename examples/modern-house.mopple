@@ -1,0 +1,616 @@
+{
+  "format": "mopple",
+  "version": "1.0",
+  "project": {
+    "id": "project_modern_house",
+    "name": "Modern House",
+    "createdAt": "2026-09-19T00:00:00.000Z",
+    "updatedAt": "2026-09-19T00:00:00.000Z",
+    "units": "meters"
+  },
+  "building": {
+    "floors": [
+      {
+        "id": "floor_ground",
+        "name": "Ground floor",
+        "elevation": 0,
+        "height": 2.8
+      }
+    ],
+    "rooms": [
+      {
+        "id": "room_kitchen",
+        "name": "Kitchen",
+        "type": "kitchen",
+        "floorId": "floor_ground",
+        "height": 2.8,
+        "boundary": [
+          {
+            "wallId": "wall_nw",
+            "reversed": false
+          },
+          {
+            "wallId": "wall_center_n",
+            "reversed": false
+          },
+          {
+            "wallId": "wall_left",
+            "reversed": true
+          },
+          {
+            "wallId": "wall_wn",
+            "reversed": false
+          }
+        ],
+        "materials": {
+          "floor": "mat_oak",
+          "wall": "mat_plaster"
+        },
+        "style": "modern"
+      },
+      {
+        "id": "room_bedroom",
+        "name": "Bedroom",
+        "type": "bedroom",
+        "floorId": "floor_ground",
+        "height": 2.8,
+        "boundary": [
+          {
+            "wallId": "wall_ne",
+            "reversed": false
+          },
+          {
+            "wallId": "wall_en",
+            "reversed": false
+          },
+          {
+            "wallId": "wall_right",
+            "reversed": true
+          },
+          {
+            "wallId": "wall_center_n",
+            "reversed": true
+          }
+        ],
+        "materials": {
+          "floor": "mat_oak",
+          "wall": "mat_plaster"
+        },
+        "style": "modern"
+      },
+      {
+        "id": "room_bath",
+        "name": "Bathroom",
+        "type": "bathroom",
+        "floorId": "floor_ground",
+        "height": 2.8,
+        "boundary": [
+          {
+            "wallId": "wall_right",
+            "reversed": false
+          },
+          {
+            "wallId": "wall_es",
+            "reversed": false
+          },
+          {
+            "wallId": "wall_se",
+            "reversed": false
+          },
+          {
+            "wallId": "wall_center_s",
+            "reversed": true
+          }
+        ],
+        "materials": {
+          "floor": "mat_stone",
+          "wall": "mat_plaster"
+        },
+        "style": "modern"
+      },
+      {
+        "id": "room_living",
+        "name": "Living and dining",
+        "type": "living_room",
+        "floorId": "floor_ground",
+        "height": 2.8,
+        "boundary": [
+          {
+            "wallId": "wall_left",
+            "reversed": false
+          },
+          {
+            "wallId": "wall_center_s",
+            "reversed": false
+          },
+          {
+            "wallId": "wall_sw",
+            "reversed": false
+          },
+          {
+            "wallId": "wall_ws",
+            "reversed": false
+          }
+        ],
+        "materials": {
+          "floor": "mat_oak",
+          "wall": "mat_plaster"
+        },
+        "style": "modern"
+      }
+    ],
+    "walls": [
+      {
+        "id": "wall_nw",
+        "floorId": "floor_ground",
+        "start": {
+          "x": -5,
+          "z": -4
+        },
+        "end": {
+          "x": 1.1,
+          "z": -4
+        },
+        "thickness": 0.2,
+        "height": 2.8,
+        "materialId": "mat_plaster"
+      },
+      {
+        "id": "wall_ne",
+        "floorId": "floor_ground",
+        "start": {
+          "x": 1.1,
+          "z": -4
+        },
+        "end": {
+          "x": 5,
+          "z": -4
+        },
+        "thickness": 0.2,
+        "height": 2.8,
+        "materialId": "mat_plaster"
+      },
+      {
+        "id": "wall_en",
+        "floorId": "floor_ground",
+        "start": {
+          "x": 5,
+          "z": -4
+        },
+        "end": {
+          "x": 5,
+          "z": 0
+        },
+        "thickness": 0.2,
+        "height": 2.8,
+        "materialId": "mat_plaster"
+      },
+      {
+        "id": "wall_es",
+        "floorId": "floor_ground",
+        "start": {
+          "x": 5,
+          "z": 0
+        },
+        "end": {
+          "x": 5,
+          "z": 4
+        },
+        "thickness": 0.2,
+        "height": 2.8,
+        "materialId": "mat_plaster"
+      },
+      {
+        "id": "wall_se",
+        "floorId": "floor_ground",
+        "start": {
+          "x": 5,
+          "z": 4
+        },
+        "end": {
+          "x": 1.1,
+          "z": 4
+        },
+        "thickness": 0.2,
+        "height": 2.8,
+        "materialId": "mat_plaster"
+      },
+      {
+        "id": "wall_sw",
+        "floorId": "floor_ground",
+        "start": {
+          "x": 1.1,
+          "z": 4
+        },
+        "end": {
+          "x": -5,
+          "z": 4
+        },
+        "thickness": 0.2,
+        "height": 2.8,
+        "materialId": "mat_plaster"
+      },
+      {
+        "id": "wall_ws",
+        "floorId": "floor_ground",
+        "start": {
+          "x": -5,
+          "z": 4
+        },
+        "end": {
+          "x": -5,
+          "z": 0
+        },
+        "thickness": 0.2,
+        "height": 2.8,
+        "materialId": "mat_plaster"
+      },
+      {
+        "id": "wall_wn",
+        "floorId": "floor_ground",
+        "start": {
+          "x": -5,
+          "z": 0
+        },
+        "end": {
+          "x": -5,
+          "z": -4
+        },
+        "thickness": 0.2,
+        "height": 2.8,
+        "materialId": "mat_plaster"
+      },
+      {
+        "id": "wall_center_n",
+        "floorId": "floor_ground",
+        "start": {
+          "x": 1.1,
+          "z": -4
+        },
+        "end": {
+          "x": 1.1,
+          "z": 0
+        },
+        "thickness": 0.16,
+        "height": 2.8,
+        "materialId": "mat_plaster"
+      },
+      {
+        "id": "wall_center_s",
+        "floorId": "floor_ground",
+        "start": {
+          "x": 1.1,
+          "z": 0
+        },
+        "end": {
+          "x": 1.1,
+          "z": 4
+        },
+        "thickness": 0.16,
+        "height": 2.8,
+        "materialId": "mat_plaster"
+      },
+      {
+        "id": "wall_left",
+        "floorId": "floor_ground",
+        "start": {
+          "x": -5,
+          "z": 0
+        },
+        "end": {
+          "x": 1.1,
+          "z": 0
+        },
+        "thickness": 0.16,
+        "height": 2.8,
+        "materialId": "mat_plaster"
+      },
+      {
+        "id": "wall_right",
+        "floorId": "floor_ground",
+        "start": {
+          "x": 1.1,
+          "z": 0
+        },
+        "end": {
+          "x": 5,
+          "z": 0
+        },
+        "thickness": 0.16,
+        "height": 2.8,
+        "materialId": "mat_plaster"
+      }
+    ],
+    "doors": [
+      {
+        "id": "door_entry",
+        "wallId": "wall_sw",
+        "position": 0.18,
+        "width": 1,
+        "height": 2.1,
+        "materialId": "mat_oak"
+      },
+      {
+        "id": "door_bedroom",
+        "wallId": "wall_center_n",
+        "position": 0.72,
+        "width": 0.9,
+        "height": 2.1,
+        "materialId": "mat_oak"
+      },
+      {
+        "id": "door_bath",
+        "wallId": "wall_center_s",
+        "position": 0.45,
+        "width": 0.85,
+        "height": 2.1,
+        "materialId": "mat_oak"
+      },
+      {
+        "id": "door_kitchen",
+        "wallId": "wall_left",
+        "position": 0.62,
+        "width": 1.6,
+        "height": 2.2,
+        "materialId": "mat_oak"
+      }
+    ],
+    "windows": [
+      {
+        "id": "window_kitchen",
+        "wallId": "wall_nw",
+        "position": 0.5,
+        "width": 2.8,
+        "height": 1.4,
+        "sillHeight": 0.9,
+        "materialId": "mat_glass"
+      },
+      {
+        "id": "window_bedroom",
+        "wallId": "wall_ne",
+        "position": 0.5,
+        "width": 2,
+        "height": 1.4,
+        "sillHeight": 0.9,
+        "materialId": "mat_glass"
+      },
+      {
+        "id": "window_bath",
+        "wallId": "wall_es",
+        "position": 0.5,
+        "width": 1.2,
+        "height": 0.8,
+        "sillHeight": 1.4,
+        "materialId": "mat_glass"
+      },
+      {
+        "id": "window_living",
+        "wallId": "wall_sw",
+        "position": 0.65,
+        "width": 2.8,
+        "height": 2,
+        "sillHeight": 0.3,
+        "materialId": "mat_glass"
+      }
+    ]
+  },
+  "interior": {
+    "objects": [
+      {
+        "id": "object_sofa",
+        "assetId": "sofa_sectional",
+        "kind": "sofa",
+        "roomId": "room_living",
+        "position": {
+          "x": -2.4,
+          "y": 0,
+          "z": 0.8
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "materialOverrides": [
+          {
+            "slot": "upholstery",
+            "materialId": "mat_linen"
+          }
+        ]
+      },
+      {
+        "id": "object_table",
+        "assetId": "coffee_table",
+        "kind": "table",
+        "roomId": "room_living",
+        "position": {
+          "x": -1.8,
+          "y": 0,
+          "z": 2
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      {
+        "id": "object_bed",
+        "assetId": "double_bed",
+        "kind": "bed",
+        "roomId": "room_bedroom",
+        "position": {
+          "x": 3,
+          "y": 0,
+          "z": -2
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      {
+        "id": "object_cabinet",
+        "assetId": "kitchen_cabinet",
+        "kind": "cabinet",
+        "roomId": "room_kitchen",
+        "position": {
+          "x": -2,
+          "y": 0,
+          "z": -3.4
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      {
+        "id": "object_lamp",
+        "assetId": "floor_lamp",
+        "kind": "lamp",
+        "roomId": "room_living",
+        "position": {
+          "x": -4,
+          "y": 0,
+          "z": 2.8
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      },
+      {
+        "id": "object_vanity",
+        "assetId": "bathroom_vanity",
+        "kind": "cabinet",
+        "roomId": "room_bath",
+        "position": {
+          "x": 2.2,
+          "y": 0,
+          "z": 0.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        }
+      }
+    ]
+  },
+  "materials": [
+    {
+      "id": "mat_plaster",
+      "name": "Warm plaster",
+      "kind": "paint",
+      "color": "#e4dfd3",
+      "roughness": 0.9,
+      "metalness": 0,
+      "opacity": 1
+    },
+    {
+      "id": "mat_oak",
+      "name": "Natural oak",
+      "kind": "wood",
+      "color": "#c8b493",
+      "roughness": 0.75,
+      "metalness": 0,
+      "opacity": 1
+    },
+    {
+      "id": "mat_stone",
+      "name": "Bathroom stone",
+      "kind": "stone",
+      "color": "#bdc7bd",
+      "roughness": 0.65,
+      "metalness": 0,
+      "opacity": 1
+    },
+    {
+      "id": "mat_linen",
+      "name": "Warm linen",
+      "kind": "fabric",
+      "color": "#e8ded0",
+      "roughness": 1,
+      "metalness": 0,
+      "opacity": 1
+    },
+    {
+      "id": "mat_glass",
+      "name": "Clear glazing",
+      "kind": "glass",
+      "color": "#a8c6be",
+      "roughness": 0.2,
+      "metalness": 0,
+      "opacity": 0.34
+    },
+    {
+      "id": "mat_metal",
+      "name": "Dark frames",
+      "kind": "metal",
+      "color": "#293531",
+      "roughness": 0.4,
+      "metalness": 0.8,
+      "opacity": 1
+    }
+  ],
+  "lighting": [
+    {
+      "id": "light_ambient",
+      "type": "ambient",
+      "color": "#f2f5e8",
+      "intensity": 1
+    },
+    {
+      "id": "light_sun",
+      "type": "directional",
+      "color": "#fff1d6",
+      "intensity": 3,
+      "position": {
+        "x": -3,
+        "y": 12,
+        "z": 8
+      },
+      "target": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      }
+    }
+  ],
+  "metadata": {
+    "description": "A compact 80 square meter modern house; external furniture asset IDs are resolved by the renderer asset registry."
+  }
+}
