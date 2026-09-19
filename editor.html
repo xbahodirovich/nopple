@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mopple Studio — Architecture, Interior & 3D Copilot</title>
+  <link rel="icon" type="image/png" href="/mopple-icon.png" />
+</head>
+<body>
+  <div id="editor-app">
+    <!-- Top Navigation Bar -->
+    <header class="top-bar">
+      <div class="brand-section">
+        <a href="/" class="brand-link" title="Back to Mopple Home">
+          <img src="/mopple-logo.png" alt="Mopple" height="20" style="object-fit: contain;" />
+        </a>
+        <span class="brand-badge">STUDIO</span>
+        <input type="text" id="project-title" class="project-title-input" value="Modern House" title="Click to rename project" />
+      </div>
+
+      <div class="view-switcher" role="tablist">
+        <button class="view-tab" data-view="2d" role="tab" title="Architecture Plan (Shortcut: 1)">2D Plan</button>
+        <button class="view-tab active" data-view="split" role="tab" title="Dual Synchronized View (Shortcut: 2)">Split View</button>
+        <button class="view-tab" data-view="3d" role="tab" title="3D Realistic View (Shortcut: 3)">3D Scene</button>
+      </div>
+
+      <div class="nav-actions">
+        <div class="save-indicator">
+          <span class="save-dot"></span>
+          <span id="save-text">Saved</span>
+        </div>
+
+        <div class="history-group">
+          <button class="icon-button disabled" id="btn-undo" title="Undo (Cmd+Z / Ctrl+Z)" disabled>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+          </button>
+          <button class="icon-button disabled" id="btn-redo" title="Redo (Cmd+Shift+Z / Ctrl+Y)" disabled>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"/></svg>
+          </button>
+        </div>
+
+        <button class="icon-button" id="btn-import" title="Import .mopple project">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        </button>
+        <button class="icon-button" id="btn-export" title="Export .mopple project">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </button>
+        <button class="icon-button" id="btn-apikey" title="Gemini AI Settings">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="editor-workspace">
+      <!-- Left Sidebar: Layers & Hierarchy -->
+      <aside class="panel-sidebar" id="layers-container"></aside>
+
+      <!-- Center Viewport Area -->
+      <div class="viewport-container">
+        <div class="canvas-pane split-left" id="pane-2d"></div>
+        <div class="canvas-pane" id="pane-3d"></div>
+
+        <!-- Viewport HUD Overlay Controls -->
+        <div class="viewport-hud">
+          <button class="icon-button" id="hud-zoom-in" title="Zoom In">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+          </button>
+          <button class="icon-button" id="hud-zoom-out" title="Zoom Out">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+          </button>
+          <button class="icon-button" id="hud-reset" title="Reset View">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          </button>
+          <button class="icon-button" id="hud-view-iso" title="Isometric 3D">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+          </button>
+          <button class="icon-button" id="hud-view-top" title="Top Down 3D">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>
+          </button>
+        </div>
+
+        <!-- Floating AI Prompt Bar -->
+        <div class="ai-floating-bar">
+          <div class="ai-chips-row">
+            <button class="ai-chip" data-prompt="make the bedroom larger by 1m">✨ Make bedroom larger</button>
+            <button class="ai-chip" data-prompt="replace the sofa with a dining table">🔄 Replace sofa with table</button>
+            <button class="ai-chip" data-prompt="change living room floor to dark oak">🪵 Floor to dark oak</button>
+            <button class="ai-chip" data-prompt="set warm evening lighting mood">🌅 Evening lighting</button>
+            <button class="ai-chip" data-prompt="add an indoor plant">🪴 Add plant</button>
+          </div>
+          <div class="ai-input-row">
+            <div class="ai-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+            </div>
+            <input type="text" id="ai-prompt-input" class="ai-prompt-input" placeholder="Ask AI: 'expand bedroom by 1m', 'replace sofa with table', 'change floor to marble'..." />
+            <button class="btn btn-primary" id="btn-ai-submit">Generate</button>
+          </div>
+          <div class="ai-status" id="ai-status"></div>
+        </div>
+      </div>
+
+      <!-- Right Sidebar: Properties Inspector -->
+      <aside class="panel-properties" id="properties-container"></aside>
+    </main>
+  </div>
+
+  <!-- API Key Modal -->
+  <div class="modal-backdrop" id="modal-apikey">
+    <div class="modal-card">
+      <div class="modal-title">Gemini AI Configuration</div>
+      <div class="modal-desc">
+        Enter your Google Gemini API Key below to enable full generative design capabilities. If omitted, Mopple's local semantic rule engine will execute common design requests instantly offline.
+      </div>
+      <div class="prop-group">
+        <div class="prop-label">Gemini API Key</div>
+        <input type="password" id="apikey-input" class="input-text" placeholder="AIzaSy..." />
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="btn-close-apikey">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-apikey">Save Key</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/editor/main.ts"></script>
+</body>
+</html>

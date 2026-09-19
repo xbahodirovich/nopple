@@ -7,8 +7,9 @@
     "dev": "vite --host",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host",
-    "test": "node --experimental-strip-types --test src/scene/timeline.test.ts src/project/*.test.ts",
+    "test": "node --experimental-strip-types --test src/scene/timeline.test.ts src/project/*.test.ts src/editor/*.test.ts",
     "test:browser": "node scripts/check-browser.mjs",
+    "test:editor": "node scripts/check-editor.mjs",
     "test:lifecycle": "node scripts/check-lifecycle.mjs"
   },
   "dependencies": {

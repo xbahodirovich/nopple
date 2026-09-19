@@ -38,3 +38,12 @@ export function isSimplePolygon(points: Point[]) {
   }
   return Number.isFinite(twiceArea) && Math.abs(twiceArea) > EPSILON;
 }
+
+export function polygonArea(points: Point[]): number {
+  let twiceArea = 0;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i], b = points[(i + 1) % points.length];
+    twiceArea += a.x * b.z - b.x * a.z;
+  }
+  return Math.abs(twiceArea) / 2;
+}

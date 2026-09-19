@@ -185,8 +185,10 @@ export class MoppleProjectEngine {
   addDoor(door: MoppleDoor) { this.#run({ type: 'add_door', door }); }
   addWindow(window: MoppleWindow) { this.#run({ type: 'add_window', window }); }
   addInteriorObject(object: MoppleInteriorObject) { this.#run({ type: 'add_object', object }); }
-  moveInteriorObject(targetId: string, position: Vector) { this.#run({ type: 'move_object', targetId, position }); }
+  moveInteriorObject(targetId: string, position: Vector, rotation?: Vector, roomId?: string) { this.#run({ type: 'move_object', targetId, position, rotation, roomId }); }
   removeInteriorObject(targetId: string) { this.#run({ type: 'remove_object', targetId }); }
+  resizeRoom(targetId: string, width: number, depth: number) { this.#run({ type: 'resize_room', targetId, width, depth }); }
+  changeRoomStyle(targetId: string, style: string) { this.#run({ type: 'change_room_style', targetId, style }); }
   changeMaterial(material: MoppleMaterial) { this.#run({ type: 'change_material', material }); }
   updateLighting(lights: MoppleLight[]) { this.#run({ type: 'update_lighting', lights }); }
 }
