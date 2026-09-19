@@ -36,6 +36,9 @@ function updateScroll() {
   if (failed || reducedMotion.matches) return;
   const progress = Math.min(1, Math.max(0, (window.scrollY - scrollStart) / scrollDistance));
   controls?.setProgress(progress);
+  if (!reducedMotion.matches && hint.firstChild) {
+    hint.firstChild.textContent = progress >= 0.9 ? 'Scroll for more ' : 'Scroll to explore ';
+  }
 }
 
 function scheduleScroll() {
