@@ -110,7 +110,16 @@
     <div class="modal-card">
       <div class="modal-title">Gemini AI Configuration</div>
       <div class="modal-desc">
-        Enter your Google Gemini API Key below to enable full generative design capabilities. If omitted, Mopple's local semantic rule engine will execute common design requests instantly offline.
+        Connect Google Gemini 3.1 Pro to enable advanced multimodal and reasoning copilot capabilities for your architectural project. If omitted, Mopple's local semantic rule engine executes common design requests instantly offline.
+      </div>
+      <div class="prop-group">
+        <div class="prop-label">Gemini Model</div>
+        <select id="gemini-model-select" class="input-select">
+          <option value="gemini-3.1-pro-preview" selected>Gemini 3.1 Pro (gemini-3.1-pro-preview)</option>
+          <option value="gemini-3.1-pro-preview-customtools">Gemini 3.1 Pro Custom Tools (gemini-3.1-pro-preview-customtools)</option>
+          <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+          <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
+        </select>
       </div>
       <div class="prop-group">
         <div class="prop-label">Gemini API Key</div>
@@ -118,7 +127,7 @@
       </div>
       <div class="modal-actions">
         <button class="btn btn-secondary" id="btn-close-apikey">Cancel</button>
-        <button class="btn btn-primary" id="btn-save-apikey">Save Key</button>
+        <button class="btn btn-primary" id="btn-save-apikey">Save Configuration</button>
       </div>
     </div>
   </div>

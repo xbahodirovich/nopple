@@ -61,3 +61,27 @@ test('AI local interpreter: update lighting mood', () => {
   const validated = validateOperations({ operations: ops });
   assert.doesNotThrow(() => engine.applyOperations(validated));
 });
+
+test('Gemini 3.1 Pro model configuration defaults and persistence', async () => {
+  // Mock localStorage for Node test runner
+  const storage = new Map<string, string>();
+  globalThis.localStorage = {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, val: string) => storage.set(key, val),
+    removeItem: (key: string) => storage.delete(key),
+    clear: () => storage.clear(),
+    key: (idx: number) => Array.from(storage.keys())[idx] ?? null,
+    length: storage.size,
+  } as Storage;
+
+  const { DEFAULT_GEMINI_MODEL, getStoredModel, setStoredModel } = await import('./ai.ts');
+  assert.equal(DEFAULT_GEMINI_MODEL, 'gemini-3.1-pro-preview');
+  assert.equal(getStoredModel(), 'gemini-3.1-pro-preview');
+
+  setStoredModel('gemini-3.1-pro-preview-customtools');
+  assert.equal(getStoredModel(), 'gemini-3.1-pro-preview-customtools');
+
+  setStoredModel('');
+  assert.equal(getStoredModel(), 'gemini-3.1-pro-preview');
+});
+

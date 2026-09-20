@@ -8,10 +8,13 @@ export interface AIExecutionResult {
   success: boolean;
   message: string;
   operationsCount: number;
-  source: 'gemini' | 'local_semantic';
+  source: 'gemini_3_1_pro' | 'gemini' | 'local_semantic';
+  model?: string;
 }
 
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.1-pro-preview';
 const GEMINI_API_KEY_STORAGE = 'mopple_gemini_api_key';
+const GEMINI_MODEL_STORAGE = 'mopple_gemini_model';
 
 export function getStoredApiKey(): string {
   return localStorage.getItem(GEMINI_API_KEY_STORAGE) || '';
@@ -22,6 +25,18 @@ export function setStoredApiKey(key: string): void {
     localStorage.removeItem(GEMINI_API_KEY_STORAGE);
   } else {
     localStorage.setItem(GEMINI_API_KEY_STORAGE, key.trim());
+  }
+}
+
+export function getStoredModel(): string {
+  return localStorage.getItem(GEMINI_MODEL_STORAGE) || DEFAULT_GEMINI_MODEL;
+}
+
+export function setStoredModel(model: string): void {
+  if (!model) {
+    localStorage.removeItem(GEMINI_MODEL_STORAGE);
+  } else {
+    localStorage.setItem(GEMINI_MODEL_STORAGE, model.trim());
   }
 }
 
@@ -39,18 +54,21 @@ export async function executeAiPrompt(
   }
 
   const apiKey = getStoredApiKey();
+  const requestedModel = getStoredModel();
 
   // If API key is provided, attempt Gemini API call first
   if (apiKey) {
     try {
-      const result = await callGeminiApi(cleanPrompt, engine.getSnapshot(), apiKey, selectedId);
-      if (result && result.operations && result.operations.length > 0) {
-        engine.applyOperations(result);
+      const result = await callGeminiApi(cleanPrompt, engine.getSnapshot(), apiKey, selectedId, requestedModel);
+      if (result && result.operations && result.operations.operations.length > 0) {
+        engine.applyOperations(result.operations);
+        const is31Pro = result.modelUsed.includes('3.1-pro') || result.modelUsed.includes('3-pro');
         return {
           success: true,
-          message: `Executed ${result.operations.length} operation(s) via Gemini`,
-          operationsCount: result.operations.length,
-          source: 'gemini',
+          message: `Executed ${result.operations.operations.length} operation(s) via ${is31Pro ? 'Gemini 3.1 Pro' : 'Gemini'} (${result.modelUsed})`,
+          operationsCount: result.operations.operations.length,
+          source: is31Pro ? 'gemini_3_1_pro' : 'gemini',
+          model: result.modelUsed,
         };
       }
     } catch (err) {
@@ -322,16 +340,17 @@ function findMentionedFurnitureKind(text: string): MoppleInteriorObject['kind'] 
 }
 
 /**
- * Direct Gemini API Integration
+ * Direct Gemini API Integration supporting Gemini 3.1 Pro
  */
 async function callGeminiApi(
   prompt: string,
   project: MoppleProject,
   apiKey: string,
-  selectedId?: string
-): Promise<MoppleOperations> {
+  selectedId?: string,
+  modelName = getStoredModel()
+): Promise<{ operations: MoppleOperations; modelUsed: string }> {
   const systemInstruction = `
-You are Mopple AI, an architectural home design copilot.
+You are Mopple AI, an architectural home design copilot powered by Gemini 3.1 Pro.
 You receive a user design instruction and the current Mopple project JSON.
 You must return ONLY a valid JSON object matching:
 {
@@ -368,14 +387,32 @@ Return strictly pure JSON with NO markdown code fences or backticks.
     },
   };
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+  let activeModel = modelName;
+  let response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${apiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }
   );
+
+  // If initial model request fails with 404/not found and we requested gemini-3.1-pro-preview, try alias
+  if (!response.ok && activeModel === 'gemini-3.1-pro-preview') {
+    const fallbackModel = 'gemini-3-pro-preview';
+    const altResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${fallbackModel}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }
+    );
+    if (altResponse.ok) {
+      response = altResponse;
+      activeModel = fallbackModel;
+    }
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -387,5 +424,5 @@ Return strictly pure JSON with NO markdown code fences or backticks.
   if (!text) throw new Error('No response text from Gemini');
 
   const parsed = JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim());
-  return validateOperations(parsed);
+  return { operations: validateOperations(parsed), modelUsed: activeModel };
 }

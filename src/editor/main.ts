@@ -6,7 +6,7 @@ import { MoppleProjectEngine } from '../project/engine.ts';
 import { roomPolygon } from '../project/geometry.ts';
 import type { MoppleInteriorObject } from '../project/schema.ts';
 import { parseProject } from '../project/validation.ts';
-import { executeAiPrompt, getStoredApiKey, setStoredApiKey } from './ai.ts';
+import { executeAiPrompt, getStoredApiKey, getStoredModel, setStoredApiKey, setStoredModel } from './ai.ts';
 import { Canvas2D, type SelectedEntity } from './canvas2d.ts';
 import { Canvas3D } from './canvas3d.ts';
 import { LayersPanel } from './layers.ts';
@@ -51,6 +51,7 @@ export function initEditor() {
   // Modals
   const apiKeyModal = document.getElementById('modal-apikey') as HTMLElement;
   const apiKeyInput = document.getElementById('apikey-input') as HTMLInputElement;
+  const geminiModelSelect = document.getElementById('gemini-model-select') as HTMLSelectElement | null;
   const btnSaveApiKey = document.getElementById('btn-save-apikey') as HTMLButtonElement;
   const btnCloseApiKey = document.getElementById('btn-close-apikey') as HTMLButtonElement;
 
@@ -287,11 +288,11 @@ export function initEditor() {
 
     try {
       const res = await executeAiPrompt(promptText, engine, selectedEntity?.id);
-      aiStatus.textContent = `${res.message} (${res.source === 'gemini' ? 'Gemini AI' : 'Semantic Engine'})`;
+      aiStatus.textContent = res.message;
       aiInput.value = '';
       setTimeout(() => {
         aiStatus.classList.remove('visible');
-      }, 4000);
+      }, 5000);
     } catch (err: any) {
       aiStatus.textContent = `Error: ${err.message}`;
       console.error('AI execution error:', err);
@@ -314,9 +315,12 @@ export function initEditor() {
     });
   });
 
-  // API Key Modal
+  // API Key & Model Modal
   function openApiKeyModal() {
     apiKeyInput.value = getStoredApiKey();
+    if (geminiModelSelect) {
+      geminiModelSelect.value = getStoredModel();
+    }
     apiKeyModal.classList.add('show');
   }
 
@@ -332,8 +336,11 @@ export function initEditor() {
 
   btnSaveApiKey.addEventListener('click', () => {
     setStoredApiKey(apiKeyInput.value);
+    if (geminiModelSelect) {
+      setStoredModel(geminiModelSelect.value);
+    }
     closeApiKeyModal();
-    alert('API key stored securely in your browser.');
+    alert('Gemini configuration saved securely in your browser.');
   });
 
   // Viewport HUD controls
