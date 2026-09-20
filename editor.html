@@ -82,12 +82,18 @@
 
         <!-- Floating AI Prompt Bar -->
         <div class="ai-floating-bar">
-          <div class="ai-chips-row">
-            <button class="ai-chip" data-prompt="make the bedroom larger by 1m">✨ Make bedroom larger</button>
-            <button class="ai-chip" data-prompt="replace the sofa with a dining table">🔄 Replace sofa with table</button>
-            <button class="ai-chip" data-prompt="change living room floor to dark oak">🪵 Floor to dark oak</button>
-            <button class="ai-chip" data-prompt="set warm evening lighting mood">🌅 Evening lighting</button>
-            <button class="ai-chip" data-prompt="add an indoor plant">🪴 Add plant</button>
+          <div class="ai-bar-header">
+            <div class="ai-chips-row">
+              <button class="ai-chip" data-prompt="make the bedroom larger by 1m">✨ Make bedroom larger</button>
+              <button class="ai-chip" data-prompt="replace the sofa with a dining table">🔄 Replace sofa with table</button>
+              <button class="ai-chip" data-prompt="change living room floor to dark oak">🪵 Floor to dark oak</button>
+              <button class="ai-chip" data-prompt="set warm evening lighting mood">🌅 Evening lighting</button>
+              <button class="ai-chip" data-prompt="add an indoor plant">🪴 Add plant</button>
+            </div>
+            <button class="ai-engine-badge" id="ai-engine-badge" type="button" title="Click to configure Gemini AI Model and API Key">
+              <span class="engine-badge-dot"></span>
+              <span class="engine-badge-text" id="engine-badge-text">Offline Engine</span>
+            </button>
           </div>
           <div class="ai-input-row">
             <div class="ai-icon">
@@ -96,7 +102,7 @@
             <input type="text" id="ai-prompt-input" class="ai-prompt-input" placeholder="Ask AI: 'expand bedroom by 1m', 'replace sofa with table', 'change floor to marble'..." />
             <button class="btn btn-primary" id="btn-ai-submit">Generate</button>
           </div>
-          <div class="ai-status" id="ai-status"></div>
+          <div class="ai-status" id="ai-status" role="alert" aria-live="polite"></div>
         </div>
       </div>
 

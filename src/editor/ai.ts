@@ -55,6 +55,7 @@ export async function executeAiPrompt(
 
   const apiKey = getStoredApiKey();
   const requestedModel = getStoredModel();
+  let geminiError: string | null = null;
 
   // If API key is provided, attempt Gemini API call first
   if (apiKey) {
@@ -71,16 +72,19 @@ export async function executeAiPrompt(
           model: result.modelUsed,
         };
       }
-    } catch (err) {
-      console.warn('Gemini API call failed, falling back to local semantic engine:', err);
-      // Fall through to local semantic engine
+    } catch (err: any) {
+      console.warn('Gemini API call failed:', err);
+      geminiError = err?.message || 'Unknown Gemini API error';
     }
   }
 
   // Local semantic natural language interpreter
   const operations = interpretPromptLocally(cleanPrompt, engine.getSnapshot(), selectedId);
   if (!operations || operations.length === 0) {
-    throw new Error(`Could not determine operations for: "${cleanPrompt}". Try asking to resize a room, replace furniture, change materials, or update lighting.`);
+    if (geminiError) {
+      throw new Error(`Gemini 3.1 Pro Error: ${geminiError}`);
+    }
+    throw new Error(`Could not determine operations for: "${cleanPrompt}". Try asking to resize a room, add or replace furniture, change materials, or update lighting.`);
   }
 
   const validated = validateOperations({ operations });
@@ -88,7 +92,9 @@ export async function executeAiPrompt(
 
   return {
     success: true,
-    message: `Applied ${validated.operations.length} change(s) seamlessly`,
+    message: geminiError
+      ? `Applied ${validated.operations.length} change(s) via local engine (Note: Gemini API error: ${geminiError})`
+      : `Applied ${validated.operations.length} change(s) seamlessly`,
     operationsCount: validated.operations.length,
     source: 'local_semantic',
   };
@@ -127,16 +133,25 @@ export function interpretPromptLocally(
     return rooms[0];
   }
 
-  // 1. LIGHTING REVISIONS
-  if (p.includes('lighting') || p.includes('sunset') || p.includes('evening') || p.includes('night') || p.includes('daylight') || p.includes('mood')) {
-    if (p.includes('evening') || p.includes('sunset') || p.includes('warm')) {
+  // 1. LIGHTING & COZY / ATMOSPHERE REVISIONS
+  if (p.includes('lighting') || p.includes('sunset') || p.includes('evening') || p.includes('night') || p.includes('daylight') || p.includes('mood') || p.includes('cozy') || p.includes('warm') || p.includes('hygge') || p.includes('bright')) {
+    if (p.includes('evening') || p.includes('sunset') || p.includes('warm') || p.includes('cozy') || p.includes('hygge')) {
       const lights: MoppleLight[] = [
-        { id: 'light_ambient', type: 'ambient', color: '#ffb370', intensity: 0.8 },
+        { id: 'light_ambient', type: 'ambient', color: '#ffb370', intensity: 0.85 },
         { id: 'light_sun', type: 'directional', color: '#ff8c3b', intensity: 2.2, position: { x: -8, y: 3, z: 6 }, target: { x: 0, y: 0, z: 0 } },
         { id: 'light_living_p1', type: 'point', color: '#ffe4b5', intensity: 2.5, position: { x: -2, y: 2.1, z: 1.5 }, range: 7 },
         { id: 'light_bed_p1', type: 'point', color: '#ffd299', intensity: 1.8, position: { x: 3.1, y: 1.8, z: -2 }, range: 5 },
       ];
-      return [{ type: 'update_lighting', lights }];
+      ops.push({ type: 'update_lighting', lights });
+
+      // If cozy requested, also add soft styling
+      if (p.includes('cozy') || p.includes('hygge')) {
+        const room = findTargetRoom() || rooms[0];
+        if (room) {
+          ops.push({ type: 'change_room_style', targetId: room.id, style: 'warm cozy' });
+        }
+      }
+      return ops;
     }
     if (p.includes('night') || p.includes('dark')) {
       const lights: MoppleLight[] = [
@@ -179,11 +194,12 @@ export function interpretPromptLocally(
     }
   }
 
-  // 3. MATERIAL CHANGES
-  if (p.includes('floor') || p.includes('flooring') || p.includes('wood') || p.includes('oak') || p.includes('marble') || p.includes('tile') || p.includes('plaster') || p.includes('wall color') || p.includes('paint')) {
+  // 3. MATERIAL & COLOR CHANGES
+  if (p.includes('floor') || p.includes('flooring') || p.includes('wood') || p.includes('oak') || p.includes('marble') || p.includes('tile') || p.includes('plaster') || p.includes('wall') || p.includes('paint') || p.includes('color') || p.includes('blue') || p.includes('white') || p.includes('green') || p.includes('black') || p.includes('grey') || p.includes('gray')) {
     const room = findTargetRoom() || rooms[0];
     let matId = 'mat_custom_' + Date.now().toString(36).slice(-4);
     let newMat: MoppleMaterial | null = null;
+    const isWall = p.includes('wall') || p.includes('paint') || p.includes('blue') || p.includes('green') || p.includes('black');
 
     if (p.includes('dark oak') || p.includes('walnut') || p.includes('dark wood')) {
       matId = 'mat_dark_oak';
@@ -197,12 +213,18 @@ export function interpretPromptLocally(
     } else if (p.includes('tile') || p.includes('ceramic')) {
       matId = 'mat_ceramic_tiles';
       newMat = { id: matId, name: 'Slate Ceramic Tiles', kind: 'flooring', color: '#596063', roughness: 0.5, metalness: 0.1, opacity: 1 };
+    } else if (p.includes('blue')) {
+      matId = 'mat_blue_paint';
+      newMat = { id: matId, name: 'Nordic Blue Plaster', kind: 'paint', color: '#3a5975', roughness: 0.85, metalness: 0.0, opacity: 1 };
     } else if (p.includes('sage') || p.includes('green')) {
       matId = 'mat_sage_paint';
       newMat = { id: matId, name: 'Sage Plaster', kind: 'paint', color: '#829987', roughness: 0.85, metalness: 0.0, opacity: 1 };
     } else if (p.includes('terracotta')) {
       matId = 'mat_terracotta';
       newMat = { id: matId, name: 'Terracotta Tiles', kind: 'flooring', color: '#b86644', roughness: 0.75, metalness: 0.0, opacity: 1 };
+    } else if (p.includes('black') || p.includes('dark') || p.includes('charcoal')) {
+      matId = 'mat_charcoal_paint';
+      newMat = { id: matId, name: 'Charcoal Finish', kind: 'paint', color: '#252e2b', roughness: 0.85, metalness: 0.0, opacity: 1 };
     } else {
       matId = 'mat_fresh_plaster';
       newMat = { id: matId, name: 'Warm White Plaster', kind: 'paint', color: '#f3efe6', roughness: 0.8, metalness: 0.0, opacity: 1 };
@@ -210,7 +232,6 @@ export function interpretPromptLocally(
 
     if (newMat) {
       ops.push({ type: 'change_material', material: newMat });
-      const isWall = p.includes('wall') || p.includes('paint');
       if (room) {
         ops.push({
           type: 'update_room',
@@ -228,7 +249,6 @@ export function interpretPromptLocally(
   }
 
   // 4. FURNITURE SWAPPING / REPLACEMENT
-  // Example: "replace the sofa with a dining table" or "swap sofa with table"
   const replaceMatch = p.match(/\b(?:replace|swap)\s+(?:the\s+)?([a-z0-9_\s]+?)\s+with\s+(?:a\s+|an\s+)?([a-z0-9_\s]+)/i);
   if (replaceMatch) {
     const oldKind = findMentionedFurnitureKind(replaceMatch[1]) || normalizeFurnitureKind(replaceMatch[1]);
@@ -252,8 +272,24 @@ export function interpretPromptLocally(
     }
   }
 
-  // 5. REMOVE FURNITURE
-  // Example: "remove sofa", "delete the bed", "remove table"
+  // 5. ROTATE / TURN FURNITURE
+  if (p.includes('rotate') || p.includes('turn')) {
+    const matchKind = findMentionedFurnitureKind(p);
+    const targetObj = matchKind
+      ? objects.find(o => o.kind === matchKind)
+      : (selectedId ? objects.find(o => o.id === selectedId) : objects[0]);
+    if (targetObj) {
+      const curRotY = targetObj.rotation?.y || 0;
+      return [{
+        type: 'move_object',
+        targetId: targetObj.id,
+        position: { ...targetObj.position },
+        rotation: { x: 0, y: curRotY + Math.PI / 2, z: 0 },
+      }];
+    }
+  }
+
+  // 6. REMOVE FURNITURE
   if (/\b(?:remove|delete|clear)\b/i.test(p)) {
     const matchKind = findMentionedFurnitureKind(p);
     if (matchKind) {
@@ -264,65 +300,73 @@ export function interpretPromptLocally(
     }
   }
 
-  // 6. ADD FURNITURE
-  // Example: "add a sofa", "add a plant", "add dining table", "place a chair"
-  if (/\b(?:add|place|insert|put)\b/i.test(p)) {
-    const matchKind = findMentionedFurnitureKind(p);
-    if (matchKind) {
-      const room = findTargetRoom() || rooms[0];
-      const poly = room ? roomPolygon(project, room) : [];
-      let posX = 0, posZ = 0;
-      if (poly.length > 0) {
-        const xs = poly.map(v => v.x), zs = poly.map(v => v.z);
-        posX = (Math.min(...xs) + Math.max(...xs)) / 2;
-        posZ = (Math.min(...zs) + Math.max(...zs)) / 2;
-      }
-      // Add slight random offset so multiple items don't overlap exactly
-      posX += (Math.random() - 0.5) * 0.8;
-      posZ += (Math.random() - 0.5) * 0.8;
+  // 7. ADD FURNITURE (with count support, e.g. "add 2 chairs")
+  const matchKind = findMentionedFurnitureKind(p);
+  if (matchKind && !/\b(?:remove|delete|clear)\b/i.test(p)) {
+    const room = findTargetRoom() || rooms[0];
+    const poly = room ? roomPolygon(project, room) : [];
+    let baseX = 0, baseZ = 0;
+    if (poly.length > 0) {
+      const xs = poly.map(v => v.x), zs = poly.map(v => v.z);
+      baseX = (Math.min(...xs) + Math.max(...xs)) / 2;
+      baseZ = (Math.min(...zs) + Math.max(...zs)) / 2;
+    }
 
-      return [{
+    const count = parseCount(p);
+    for (let i = 0; i < count; i++) {
+      const offsetX = (i - (count - 1) / 2) * 0.7 + (Math.random() - 0.5) * 0.2;
+      const offsetZ = (Math.random() - 0.5) * 0.4;
+      ops.push({
         type: 'add_object',
         object: {
-          id: `object_${matchKind}_${Date.now().toString(36).slice(-4)}`,
+          id: `object_${matchKind}_${Date.now().toString(36).slice(-4)}_${i}`,
           assetId: `${matchKind}_custom`,
           kind: matchKind,
           roomId: room ? room.id : rooms[0].id,
-          position: { x: Math.round(posX * 10) / 10, y: 0, z: Math.round(posZ * 10) / 10 },
+          position: { x: Math.round((baseX + offsetX) * 10) / 10, y: 0, z: Math.round((baseZ + offsetZ) * 10) / 10 },
           rotation: { x: 0, y: 0, z: 0 },
           scale: { x: 1, y: 1, z: 1 },
         },
-      }];
+      });
     }
+    return ops;
   }
 
-  // 7. STYLE CHANGE
-  // Example: "make it scandinavian", "minimalist style", "japanese modern"
-  if (p.includes('style') || p.includes('scandinavian') || p.includes('minimal') || p.includes('japandi') || p.includes('industrial')) {
-    const room = findTargetRoom() || rooms[0];
+  // 8. WHOLE HOUSE / ARCHITECTURAL STYLES
+  if (p.includes('house') || p.includes('apartment') || p.includes('villa') || p.includes('design') || p.includes('create') || p.includes('build') || p.includes('style') || p.includes('scandinavian') || p.includes('minimal') || p.includes('japandi') || p.includes('industrial') || p.includes('modern')) {
     const styleName = p.includes('scandinavian') ? 'scandinavian'
       : p.includes('japandi') ? 'japandi'
       : p.includes('industrial') ? 'industrial'
       : p.includes('minimal') ? 'minimalist'
-      : 'modern';
-    if (room) {
-      return [{ type: 'change_room_style', targetId: room.id, style: styleName }];
+      : 'modern architectural';
+
+    for (const room of rooms) {
+      ops.push({ type: 'change_room_style', targetId: room.id, style: styleName });
     }
+    return ops;
   }
 
   return ops;
 }
 
+const countMap: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6 };
+function parseCount(text: string): number {
+  const m = text.match(/\b(one|two|three|four|five|six|\d+)\b/);
+  if (!m) return 1;
+  const num = parseInt(m[1], 10);
+  return Number.isFinite(num) && num > 0 && num <= 8 ? num : (countMap[m[1]] || 1);
+}
+
 function normalizeFurnitureKind(text: string): MoppleInteriorObject['kind'] | null {
   const t = text.toLowerCase().trim();
-  if (t.includes('sofa') || t.includes('couch')) return 'sofa';
+  if (t.includes('sofa') || t.includes('couch') || t.includes('sectional')) return 'sofa';
   if (t.includes('bed')) return 'bed';
   if (t.includes('table') || t.includes('desk')) return 'table';
   if (t.includes('chair') || t.includes('armchair') || t.includes('stool')) return 'chair';
-  if (t.includes('cabinet') || t.includes('wardrobe') || t.includes('shelf') || t.includes('sideboard')) return 'cabinet';
-  if (t.includes('lamp') || t.includes('light')) return 'lamp';
-  if (t.includes('appliance') || t.includes('stove') || t.includes('fridge') || t.includes('sink')) return 'appliance';
-  if (t.includes('plant') || t.includes('decor') || t.includes('rug') || t.includes('art')) return 'decoration';
+  if (t.includes('cabinet') || t.includes('wardrobe') || t.includes('shelf') || t.includes('sideboard') || t.includes('cupboard') || t.includes('credenza')) return 'cabinet';
+  if (t.includes('lamp') || t.includes('light') || t.includes('chandelier')) return 'lamp';
+  if (t.includes('appliance') || t.includes('stove') || t.includes('fridge') || t.includes('sink') || t.includes('oven')) return 'appliance';
+  if (t.includes('plant') || t.includes('flower') || t.includes('tree') || t.includes('decor') || t.includes('rug') || t.includes('carpet') || t.includes('art')) return 'decoration';
   return null;
 }
 
@@ -332,11 +376,168 @@ function findMentionedFurnitureKind(text: string): MoppleInteriorObject['kind'] 
   for (const kind of kinds) {
     if (t.includes(kind)) return kind;
   }
-  if (t.includes('plant') || t.includes('rug')) return 'decoration';
+  if (t.includes('plant') || t.includes('plants') || t.includes('flower') || t.includes('tree') || t.includes('rug') || t.includes('carpet')) return 'decoration';
   if (t.includes('desk')) return 'table';
-  if (t.includes('couch')) return 'sofa';
-  if (t.includes('stove') || t.includes('sink')) return 'appliance';
+  if (t.includes('couch') || t.includes('sectional')) return 'sofa';
+  if (t.includes('stove') || t.includes('sink') || t.includes('fridge') || t.includes('oven')) return 'appliance';
+  if (t.includes('stool') || t.includes('armchair') || t.includes('seat')) return 'chair';
+  if (t.includes('wardrobe') || t.includes('shelf') || t.includes('sideboard') || t.includes('credenza')) return 'cabinet';
   return null;
+}
+
+/**
+ * Robust sanitizer that cleans and validates Gemini API operations against Mopple Schema.
+ */
+export function sanitizeGeminiOperations(raw: any, project: MoppleProject): MoppleOperations {
+  let list: any[] = [];
+  if (Array.isArray(raw)) {
+    list = raw;
+  } else if (raw && Array.isArray(raw.operations)) {
+    list = raw.operations;
+  } else if (raw && typeof raw === 'object') {
+    const arrayKey = Object.keys(raw).find(k => Array.isArray(raw[k]));
+    if (arrayKey) list = raw[arrayKey];
+  }
+
+  const cleanOps: MoppleOperation[] = [];
+  const rooms = project.building.rooms;
+  const objects = project.interior.objects;
+
+  for (const item of list) {
+    if (!item || typeof item !== 'object' || typeof item.type !== 'string') continue;
+
+    const type = item.type;
+
+    if (type === 'add_object') {
+      const o = item.object || item;
+      const rawKind = String(o.kind || item.kind || 'decoration').toLowerCase();
+      const kind = normalizeFurnitureKind(rawKind) || 'decoration';
+
+      let roomId = o.roomId || item.roomId;
+      if (!rooms.some(r => r.id === roomId)) {
+        const matchingRoom = rooms.find(r => r.type === roomId || r.name.toLowerCase().includes(String(roomId).toLowerCase()));
+        roomId = matchingRoom ? matchingRoom.id : (rooms[0]?.id || 'room_default');
+      }
+
+      const rawId = String(o.id || `object_${kind}_${Date.now().toString(36).slice(-4)}`);
+      const id = rawId.replace(/[^A-Za-z0-9_-]/g, '_').replace(/^[^A-Za-z]/, 'obj_$&');
+      const assetId = String(o.assetId || `${kind}_item`).replace(/[^A-Za-z0-9_-]/g, '_').replace(/^[^A-Za-z]/, 'asset_$&');
+
+      cleanOps.push({
+        type: 'add_object',
+        object: {
+          id,
+          assetId,
+          roomId,
+          kind,
+          position: {
+            x: Number(o.position?.x) || 0,
+            y: Number(o.position?.y) || 0,
+            z: Number(o.position?.z) || 0,
+          },
+          rotation: {
+            x: Number(o.rotation?.x) || 0,
+            y: Number(o.rotation?.y) || 0,
+            z: Number(o.rotation?.z) || 0,
+          },
+          scale: {
+            x: Math.max(0.1, Number(o.scale?.x) || 1),
+            y: Math.max(0.1, Number(o.scale?.y) || 1),
+            z: Math.max(0.1, Number(o.scale?.z) || 1),
+          },
+        },
+      });
+    } else if (type === 'resize_room') {
+      let targetId = String(item.targetId || '');
+      if (!rooms.some(r => r.id === targetId)) {
+        const found = rooms.find(r => r.name.toLowerCase().includes(targetId.toLowerCase()) || r.type.includes(targetId.toLowerCase()));
+        targetId = found ? found.id : rooms[0].id;
+      }
+      const width = Math.max(1, Number(item.width) || 4);
+      const depth = Math.max(1, Number(item.depth) || 4);
+      cleanOps.push({ type: 'resize_room', targetId, width, depth });
+    } else if (type === 'remove_object') {
+      let targetId = String(item.targetId || '');
+      if (!objects.some(o => o.id === targetId)) {
+        const found = objects.find(o => o.kind === targetId || o.assetId.toLowerCase().includes(targetId.toLowerCase()));
+        if (found) targetId = found.id;
+      }
+      if (objects.some(o => o.id === targetId)) {
+        cleanOps.push({ type: 'remove_object', targetId });
+      }
+    } else if (type === 'move_object') {
+      let targetId = String(item.targetId || '');
+      if (!objects.some(o => o.id === targetId)) {
+        const found = objects.find(o => o.kind === targetId || o.assetId.toLowerCase().includes(targetId.toLowerCase()));
+        if (found) targetId = found.id;
+      }
+      if (objects.some(o => o.id === targetId)) {
+        cleanOps.push({
+          type: 'move_object',
+          targetId,
+          position: {
+            x: Number(item.position?.x) || 0,
+            y: Number(item.position?.y) || 0,
+            z: Number(item.position?.z) || 0,
+          },
+          rotation: item.rotation ? {
+            x: Number(item.rotation.x) || 0,
+            y: Number(item.rotation.y) || 0,
+            z: Number(item.rotation.z) || 0,
+          } : undefined,
+          roomId: item.roomId && rooms.some(r => r.id === item.roomId) ? item.roomId : undefined,
+        });
+      }
+    } else if (type === 'change_material') {
+      const m = item.material;
+      if (m && typeof m === 'object') {
+        const id = String(m.id || 'mat_custom').replace(/[^A-Za-z0-9_-]/g, '_').replace(/^[^A-Za-z]/, 'mat_$&');
+        const validKinds = ['paint', 'wood', 'stone', 'glass', 'metal', 'flooring', 'fabric', 'custom'];
+        const kind = validKinds.includes(m.kind) ? m.kind : 'paint';
+        const color = typeof m.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(m.color) ? m.color : '#e0dbcf';
+        cleanOps.push({
+          type: 'change_material',
+          material: {
+            id,
+            name: String(m.name || 'Custom Material'),
+            kind,
+            color,
+            roughness: Math.max(0, Math.min(1, Number(m.roughness) ?? 0.8)),
+            metalness: Math.max(0, Math.min(1, Number(m.metalness) ?? 0.0)),
+            opacity: Math.max(0, Math.min(1, Number(m.opacity) ?? 1.0)),
+          },
+        });
+      }
+    } else if (type === 'update_room') {
+      let targetId = String(item.targetId || '');
+      if (!rooms.some(r => r.id === targetId)) {
+        const found = rooms.find(r => r.name.toLowerCase().includes(targetId.toLowerCase()) || r.type.includes(targetId.toLowerCase()));
+        targetId = found ? found.id : rooms[0].id;
+      }
+      cleanOps.push({
+        type: 'update_room',
+        targetId,
+        changes: item.changes || {},
+      });
+    } else if (type === 'change_room_style') {
+      let targetId = String(item.targetId || '');
+      if (!rooms.some(r => r.id === targetId)) {
+        const found = rooms.find(r => r.name.toLowerCase().includes(targetId.toLowerCase()) || r.type.includes(targetId.toLowerCase()));
+        targetId = found ? found.id : rooms[0].id;
+      }
+      cleanOps.push({
+        type: 'change_room_style',
+        targetId,
+        style: String(item.style || 'modern'),
+      });
+    } else if (type === 'update_lighting') {
+      if (Array.isArray(item.lights) && item.lights.length > 0) {
+        cleanOps.push({ type: 'update_lighting', lights: item.lights });
+      }
+    }
+  }
+
+  return validateOperations({ operations: cleanOps });
 }
 
 /**
@@ -388,14 +589,15 @@ Return strictly pure JSON with NO markdown code fences or backticks.
   };
 
   let activeModel = modelName;
-  let response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }
-  );
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${apiKey}`;
+  let response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey,
+    },
+    body: JSON.stringify(body),
+  });
 
   // If initial model request fails with 404/not found and we requested gemini-3.1-pro-preview, try alias
   if (!response.ok && activeModel === 'gemini-3.1-pro-preview') {
@@ -404,7 +606,10 @@ Return strictly pure JSON with NO markdown code fences or backticks.
       `https://generativelanguage.googleapis.com/v1beta/models/${fallbackModel}:generateContent?key=${apiKey}`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
+        },
         body: JSON.stringify(body),
       }
     );
@@ -416,13 +621,31 @@ Return strictly pure JSON with NO markdown code fences or backticks.
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Gemini API error (${response.status}): ${errorText}`);
+    let errorDetail = errorText;
+    try {
+      const errObj = JSON.parse(errorText);
+      if (errObj.error?.message) errorDetail = errObj.error.message;
+    } catch {}
+    throw new Error(`(${response.status}) ${errorDetail}`);
   }
 
   const data = await response.json();
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error('No response text from Gemini');
+  if (!text) throw new Error('No response text from Gemini API');
 
-  const parsed = JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim());
-  return { operations: validateOperations(parsed), modelUsed: activeModel };
+  const jsonStr = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+  let parsed: any;
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch {
+    const start = jsonStr.indexOf('{') !== -1 ? jsonStr.indexOf('{') : jsonStr.indexOf('[');
+    const end = jsonStr.lastIndexOf('}') !== -1 ? jsonStr.lastIndexOf('}') : jsonStr.lastIndexOf(']');
+    if (start !== -1 && end > start) {
+      parsed = JSON.parse(jsonStr.substring(start, end + 1));
+    } else {
+      throw new Error('Could not parse valid JSON from Gemini output');
+    }
+  }
+
+  return { operations: sanitizeGeminiOperations(parsed, project), modelUsed: activeModel };
 }

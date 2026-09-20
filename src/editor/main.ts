@@ -47,6 +47,8 @@ export function initEditor() {
   const aiInput = document.getElementById('ai-prompt-input') as HTMLInputElement;
   const aiSubmit = document.getElementById('btn-ai-submit') as HTMLButtonElement;
   const aiStatus = document.getElementById('ai-status') as HTMLElement;
+  const aiEngineBadge = document.getElementById('ai-engine-badge') as HTMLElement | null;
+  const engineBadgeText = document.getElementById('engine-badge-text') as HTMLElement | null;
 
   // Modals
   const apiKeyModal = document.getElementById('modal-apikey') as HTMLElement;
@@ -279,22 +281,64 @@ export function initEditor() {
     }
   });
 
+  // AI Engine Badge Synchronization
+  function updateEngineBadge() {
+    const hasKey = Boolean(getStoredApiKey());
+    const model = getStoredModel();
+    if (!aiEngineBadge || !engineBadgeText) return;
+
+    if (hasKey) {
+      aiEngineBadge.classList.add('active-gemini');
+      const is31 = model.includes('3.1-pro') || model.includes('3-pro');
+      const label = is31 ? 'Gemini 3.1 Pro' : (model.includes('3.5-flash') ? 'Gemini 3.5 Flash' : 'Gemini Active');
+      engineBadgeText.textContent = `⚡ ${label}`;
+      aiEngineBadge.title = `Using ${model}. Click to configure model or API key.`;
+    } else {
+      aiEngineBadge.classList.remove('active-gemini');
+      engineBadgeText.textContent = 'Offline Engine';
+      aiEngineBadge.title = 'Running local semantic engine. Click to connect Gemini 3.1 Pro.';
+    }
+  }
+
+  aiEngineBadge?.addEventListener('click', () => openApiKeyModal());
+  updateEngineBadge();
+
   // AI Prompt Submission
+  let statusTimeout: ReturnType<typeof setTimeout> | null = null;
+
   async function runAiPrompt(promptText: string) {
-    if (!promptText.trim()) return;
-    aiStatus.textContent = 'Generating modifications...';
-    aiStatus.classList.add('visible');
+    const text = promptText.trim();
+    if (!text) {
+      aiStatus.className = 'ai-status visible error';
+      aiStatus.innerHTML = '<span class="status-icon">⚠️</span><span>Please enter a prompt (e.g. "expand bedroom by 1m" or "add a sofa")</span>';
+      if (statusTimeout) clearTimeout(statusTimeout);
+      statusTimeout = setTimeout(() => {
+        aiStatus.classList.remove('visible');
+      }, 4000);
+      return;
+    }
+
+    if (statusTimeout) clearTimeout(statusTimeout);
+    const hasKey = Boolean(getStoredApiKey());
+
+    aiStatus.className = 'ai-status visible loading';
+    aiStatus.innerHTML = `<span class="ai-spinner"></span><span>${
+      hasKey ? `Gemini 3.1 Pro is processing architecture changes...` : 'Analyzing prompt locally...'
+    }</span>`;
     aiSubmit.disabled = true;
 
     try {
-      const res = await executeAiPrompt(promptText, engine, selectedEntity?.id);
-      aiStatus.textContent = res.message;
+      const res = await executeAiPrompt(text, engine, selectedEntity?.id);
+      aiStatus.className = 'ai-status visible success';
+      aiStatus.innerHTML = `<span class="status-icon">✓</span><span>${res.message}</span>`;
       aiInput.value = '';
-      setTimeout(() => {
+      statusTimeout = setTimeout(() => {
         aiStatus.classList.remove('visible');
-      }, 5000);
+      }, 6000);
     } catch (err: any) {
-      aiStatus.textContent = `Error: ${err.message}`;
+      aiStatus.className = 'ai-status visible error';
+      const msg = err.message || 'Unknown error occurred';
+      aiStatus.innerHTML = `<span class="status-icon">⚠️</span><span>${msg}</span>`;
       console.error('AI execution error:', err);
     } finally {
       aiSubmit.disabled = false;
@@ -304,6 +348,11 @@ export function initEditor() {
   aiSubmit.addEventListener('click', () => runAiPrompt(aiInput.value));
   aiInput.addEventListener('keydown', e => {
     if (e.key === 'Enter') runAiPrompt(aiInput.value);
+  });
+  aiInput.addEventListener('input', () => {
+    if (aiStatus.classList.contains('error')) {
+      aiStatus.classList.remove('visible');
+    }
   });
 
   // AI Chip Buttons
@@ -340,7 +389,14 @@ export function initEditor() {
       setStoredModel(geminiModelSelect.value);
     }
     closeApiKeyModal();
-    alert('Gemini configuration saved securely in your browser.');
+    updateEngineBadge();
+    const hasKey = Boolean(getStoredApiKey());
+    if (hasKey) {
+      aiStatus.className = 'ai-status visible success';
+      aiStatus.innerHTML = '<span class="status-icon">✓</span><span>Gemini 3.1 Pro configured and active!</span>';
+      if (statusTimeout) clearTimeout(statusTimeout);
+      statusTimeout = setTimeout(() => aiStatus.classList.remove('visible'), 4000);
+    }
   });
 
   // Viewport HUD controls
