@@ -4,9 +4,7 @@
 
 ## Current implementation and scope
 
-The repository originally contains a Vite/TypeScript landing page, a procedural Three.js demonstration, an SVG fallback and scroll animation tests. There is no React/R3F, editor, backend, asset service or existing state-management/validation library. `design.md` is a visual reference and remains unchanged.
-
-This change implements the **core foundation only**, as requested: typed schemas, Zod validation, the engine, AI operations, shared projections, a session store, file helpers, tests and an example. The existing `HouseModel.ts`, `HeroScene.ts`, `fallback.ts` and landing UI are **not yet connected to this engine**. Their promotional demonstration remains procedural. Do not mistake the three data projections for finished editors or a general-purpose scene renderer.
+The project contains a Vite/TypeScript landing page and a separate Studio editor (`editor.html`). The landing demonstration remains procedural; Studio's 2D and 3D views subscribe to one `MoppleProjectEngine`. Zod validates the file format and operations. Studio also includes autosave, undo/redo, file controls, basic concept-house generation and a same-origin NVIDIA NIM service. See [editor-system.md](editor-system.md) for integration and limitations.
 
 ## Files and public entry points
 
@@ -20,7 +18,7 @@ This change implements the **core foundation only**, as requested: typed schemas
 | `src/project/adapters.ts` | Architecture, interior and 3D data projections |
 | `src/project/files.ts` | Import, export payload and browser download helpers |
 | `src/project/index.ts` | Environment-independent public exports |
-| `src/project/store.ts` | One application session seeded from the example; imports Vite `?raw` separately |
+| `src/project/store.ts` | Example session for other consumers; Studio instead initializes its one shared session from autosave |
 | `examples/modern-house.mopple` | Valid 80 m², four-room example with furniture, materials and lights |
 
 ## File envelope
@@ -149,9 +147,11 @@ projectEngine.moveWall('wall_center_n', { x: 1.6, z: -4 }, { x: 1.6, z: 0 });
 unsubscribe();
 ```
 
-The renderer names above are integration placeholders, not existing implementations. Every mode must import the same session from `store.ts`. A new project can replace it with `projectEngine.loadProject(createProject('New home'))`; do not create a separate engine for each tab.
+The renderer names above illustrate the adapter API. Studio initializes one engine in `src/editor/main.ts` and passes it to both canvases and panels. The 3D mesh builder consumes shared projections; 2D projects the same canonical data. `store.ts` remains an optional example singleton and is not a second active editor store. Do not create separate engines for the different modes.
 
 `getSnapshot()` and notifications provide detached copies. Mutating them cannot edit the project. An edit validates commands, clones the current state, applies the batch sequentially, validates the resulting project, advances its update timestamp and commits once. Invalid operations preserve state, timestamps and subscribers. Successful batches notify each subscriber once. Subscriber exceptions are reported separately and cannot undo committed data or interrupt other subscribers. Reentrant edits from notification callbacks are rejected; schedule a later operation instead. `subscribe()` only reports changes; `subscribeProjectViews()` also delivers the initial projection.
+
+The engine also exposes undo/redo (50 revisions), a monotonically increasing session `revision`, `renameProject`, `scaleInteriorObject` and `removeRoom`. Renaming and scaling are ordinary undoable operations. A room with furniture cannot be removed until the furniture is moved or removed; its walls remain. Reentrant edits and history changes from subscribers are rejected before mutating state.
 
 The engine exposes `addFloor`, `addRoom`, `updateRoom`, `addWall`, `updateWall`, `moveWall`, `removeWall`, `addDoor`, `addWindow`, `addInteriorObject`, `moveInteriorObject`, `removeInteriorObject`, `changeMaterial`, `updateLighting`, `applyOperations`, `loadProject`, `importProject` and `saveProject`. `createProject` and `validateProject` are separate exports. `updateWall` changes dimensions/material; endpoint edits use `moveWall`.
 
@@ -170,6 +170,10 @@ An AI provider submits structured data to `applyOperations(unknown)`. Ordinary e
 
 | Operation | Payload beyond `type` |
 | --- | --- |
+| `rename_project` | `name` |
+| `create_house` | `area` (40–600 m²), integer `bedrooms` (1–8), integer `bathrooms` (1–5), `style` |
+| `scale_object` | `targetId`, positive XYZ `scale` |
+| `remove_room` | `targetId`; fails while furniture references the room |
 | `add_floor` | `floor`: full floor entity |
 | `add_wall` | `wall`: full wall entity |
 | `create_room` | `room`: full room entity |
@@ -186,6 +190,8 @@ An AI provider submits structured data to `applyOperations(unknown)`. Ordinary e
 | `change_room_style` | `targetId`, descriptive `style` string |
 | `update_lighting` | `lights`: complete array, possibly empty |
 
+`create_house` builds a deterministic single-floor concept with two room wings and a central hall, windows, doors, materials, lighting and basic furniture. It replaces building/interior/material/lighting data as one undoable operation. The requested area is measured by room centerline polygons including the hall; infeasible room-count/area combinations fail. The AI layer only accepts this operation for an explicit house creation request.
+
 Batches contain 1–100 operations. Types and fields are strict; unknown commands, extra fields and invalid targets are rejected. IDs for new entities come from the caller. Newly created dependencies should precede operations that use them. Cross-references are checked against the final batch result, allowing walls and their room to be created together.
 
 `move_wall` moves the wall's endpoints **and every coincident wall endpoint on the same floor**. This keeps connected room rings closed. `resize_room` supports only four-edge axis-aligned rectangles, anchors the minimum X/Z corner and moves boundary vertices and their connected walls. Adjacent rooms may change shape. It does not automatically reposition furniture. If the resulting room, wall or opening becomes invalid, the entire batch is rejected. Referenced walls cannot be removed; there is no implicit destructive cascade. Changing a room's style records intent only—it does not generate furniture or materials.
@@ -196,19 +202,16 @@ Validation covers strict required fields, enums, ID syntax/uniqueness, all in-pr
 
 `parseProject(text)` checks a 5 MiB UTF-8 limit, parses JSON, checks the format/version and validates all relationships. Malformed data never reaches the store. `importMoppleFile(engine, file)` also checks the `.mopple` suffix (case-insensitive) and size before reading. A failed import preserves the active project. Successful imports preserve source IDs/timestamps. Concurrent file-picker requests should be serialized by the future UI if selection order matters.
 
-`exportMoppleFile(engine)` returns `{filename, contents, mimeType}`. Names are sanitized into `project-name.mopple`; content is indented JSON with a trailing newline and MIME type `application/json`. `downloadMoppleFile(engine)` creates and cleans up a browser download URL. The helpers are ready for file input/export buttons, but no buttons were added to the landing page. There is no automatic disk persistence yet.
+`exportMoppleFile(engine)` returns `{filename, contents, mimeType}`. Names are sanitized into `project-name.mopple`; content is indented JSON with a trailing newline and MIME type `application/json`. `downloadMoppleFile(engine)` creates and cleans up a browser download URL. Studio connects these helpers to its import/export controls. It autosaves locally with a 600ms debounce and flushes pending changes on backgrounding/navigation. Storage failures are visible and users can export. There is no cloud persistence.
 
 ## Versioning
 
 `FORMAT` and `CURRENT_VERSION` live only in `schema.ts`. All load paths pass through `migrateProject()` in `validation.ts` before parsing the current schema. Version 1.0 is the only supported input today; unknown/missing versions fail explicitly. For a future version, validate the old schema, run a pure migration here, then validate the latest schema. Preserve stable IDs. Do not scatter version checks throughout editors or renderers.
 
-## Next AI/developer handoff
+## Remaining scope and verification
 
-1. Build editors around the single `projectEngine` session and its operations; connect all three renderers through `subscribeProjectViews`. Preserve the existing scroll/camera lifecycle when connecting the landing demonstration, if desired.
-2. Implement mesh generation from wall/opening descriptors, floor polygons and asset instances. Honor floor elevation, material references and XYZ radians; triangulation and real opening geometry belong in that adapter. Update the SVG/2D fallback from the same data.
-3. Supply an asset registry for the example's `assetId` values, with placeholders for missing assets. Add import/export controls using the existing file helpers.
-4. Integrate Gemini or another provider by requesting the documented operations, parsing JSON, calling `applyOperations`, and displaying validation issues. No provider SDK or network call is included here.
+Studio implements the core editing path; [editor-system.md](editor-system.md) documents it. Future work includes real furniture catalogs, arbitrary room creation tools, parametric layouts, open-plan zones, floor/roof authoring, richer material slots and cloud persistence. The generic engine supports adding floors/walls/rooms/openings through validated operations; the current inspector primarily edits existing entities.
 
-Deliberate MVP limits: wall-bound closed room polygons without holes, no separate open-plan zones, no roof/site schema, no room-overlap or inter-floor collision solver, no furniture containment/collision enforcement, no wall-face material system, no undo/history, no UI editor or mesh builder. Room membership validates references, not spatial containment; object movement after a wall resize is explicit. No BIM, structural analysis, building services, CAD output, collaboration or compression is attempted.
+MVP limits remain: closed wall-bound room polygons without holes, no automatic wall splitting/merging, no room-overlap/inter-floor collision solver, no furniture containment enforcement, no opposing wall-face material system. Room style is descriptive metadata rather than an automatic visual redesign. New house generation is a deterministic concept template, not CAD or structural analysis. The schema supports multiple floors and renderers honor elevation; the concept generator creates a single floor.
 
-Run `npm test` for format round trips, invalid imports/relationships, operation rejection, rollback, mutation isolation, shared projections, coordinate derivation and the existing timeline tests. Run `npm run build` for TypeScript and the production landing bundle.
+Run `npm test`, `npm run build` and `npm run test:editor`. The editor browser tests cover operations, persistence, hostile strings, API failures, idle rendering and mobile panels. Automated AI tests mock the provider; a live integration test requires a valid NVIDIA key.

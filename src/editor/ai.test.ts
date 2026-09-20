@@ -127,54 +127,55 @@ test('AI local interpreter: multiple items, wall colors, rotation, cozy and styl
   assert.doesNotThrow(() => engine.applyOperations(validateOperations({ operations: opsStyle })));
 });
 
-test('NVIDIA NIM & GLM 5.3 Flash sanitization: strips extra fields and fixes IDs and transforms', async () => {
-  const { sanitizeOperations, sanitizeGeminiOperations } = await import('./ai.ts');
-  assert.equal(sanitizeOperations, sanitizeGeminiOperations);
-
-  const project = parseProject(example);
-  const engine = new MoppleProjectEngine(project);
-
-  // GLM 5.3 Flash / NIM returns extra fields (thought, explanation) and missing transforms
-  const rawNimOutput = {
-    thought: 'The user wants a modern armchair in the living room and larger bedroom.',
-    operations: [
-      {
-        type: 'add_object',
-        object: {
-          id: 'armchair #1',
-          assetId: 'chair_nordic',
-          roomId: 'room_living',
-          kind: 'chair',
-          position: { x: 1.2, y: 0, z: -0.5 },
-          // missing rotation and scale
-          unwanted_meta_field: 'extra data',
-        },
-      },
-      {
-        type: 'resize_room',
-        targetId: 'Bedroom', // Name instead of ID
-        width: 5.5,
-        depth: 4.2,
-      },
-    ],
-  };
-
-  const sanitized = sanitizeOperations(rawNimOutput, project);
-  assert.equal(sanitized.operations.length, 2);
-  assert.equal(sanitized.operations[0].type, 'add_object');
-  if (sanitized.operations[0].type === 'add_object') {
-    assert.ok(!sanitized.operations[0].object.id.includes('#'));
-    assert.deepEqual(sanitized.operations[0].object.scale, { x: 1, y: 1, z: 1 });
-    assert.deepEqual(sanitized.operations[0].object.rotation, { x: 0, y: 0, z: 0 });
-  }
-
-  // targetId was mapped from 'Bedroom' to 'room_bedroom'
-  assert.equal(sanitized.operations[1].type, 'resize_room');
-  if (sanitized.operations[1].type === 'resize_room') {
-    assert.equal(sanitized.operations[1].targetId, 'room_bedroom');
-  }
-
-  assert.doesNotThrow(() => engine.applyOperations(sanitized));
+test('AI responses reject extra fields and guessed targets instead of rewriting intent', async () => {
+  const { sanitizeOperations } = await import('./ai.ts');
+  const p = parseProject(example), engine = new MoppleProjectEngine(p);
+  assert.throws(() => sanitizeOperations({ thought: 'extra', operations: [{ type: 'remove_object', targetId: 'object_sofa' }] }, p));
+  const operations = sanitizeOperations({ operations: [{ type: 'resize_room', targetId: 'room_unknown', width: 5, depth: 5 }] }, p);
+  assert.throws(() => engine.applyOperations(operations), /Unknown target/);
+  assert.deepEqual(engine.getSnapshot(), p);
 });
 
+test('offline requests distinguish furniture nouns and move versus add', () => {
+  const p = parseProject(example);
+  const chair = interpretPromptLocally('add a chair to the bedroom', p)[0];
+  assert.equal(chair.type, 'add_object');
+  if (chair.type === 'add_object') { assert.equal(chair.object.kind, 'chair'); assert.equal(chair.object.roomId, 'room_bedroom'); }
+  assert.equal(interpretPromptLocally('add a floor lamp', p)[0].type, 'add_object');
+  const move = interpretPromptLocally('move the sofa 1m left', p)[0];
+  assert.equal(move.type, 'move_object');
+  if (move.type === 'move_object') assert.equal(move.position.x, p.interior.objects[0].position.x - 1);
+});
 
+test('house creation builds exact requested room counts and area, and supports undo', async () => {
+  const { polygonArea, roomPolygon } = await import('../project/geometry.ts');
+  const p = parseProject(example), e = new MoppleProjectEngine(p);
+  const ops = interpretPromptLocally('Create a modern 150m² house with 3 bedrooms and 2 bathrooms', p);
+  assert.equal(ops[0].type, 'create_house'); e.applyOperations({ operations: ops });
+  const next = e.getSnapshot();
+  assert.equal(next.building.rooms.filter(r => r.type === 'bedroom').length, 3);
+  assert.equal(next.building.rooms.filter(r => r.type === 'bathroom').length, 2);
+  assert.ok(Math.abs(next.building.rooms.reduce((area, r) => area + polygonArea(roomPolygon(next, r)), 0) - 150) < 1e-6);
+  assert.ok(next.building.doors.length > 3); assert.ok(next.building.windows.length > 3);
+  e.undo(); assert.deepEqual(e.getSnapshot(), p);
+});
+
+test('API failure never falls back to a different edit; stale responses never overwrite new work', async () => {
+  const { executeAiPrompt, setStoredApiKey } = await import('./ai.ts');
+  const original = globalThis.fetch; const e = new MoppleProjectEngine(parseProject(example));
+  setStoredApiKey('nvapi-test');
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({ error: 'Invalid API key' }), { status: 401 });
+    const before = e.saveProject();
+    await assert.rejects(executeAiPrompt('move the sofa left', e), /Invalid API key/);
+    assert.equal(e.saveProject(), before);
+    let resolveRequest: (response: Response) => void = () => {};
+    globalThis.fetch = () => new Promise(resolve => { resolveRequest = resolve; });
+    const request = executeAiPrompt('move the sofa left', e);
+    await assert.rejects(executeAiPrompt('add a bed', e), /already running/);
+    e.renameProject('New work');
+    resolveRequest(new Response(JSON.stringify({ operations: [{ type: 'remove_object', targetId: 'object_sofa' }] })));
+    await assert.rejects(request, /project changed/);
+    assert.ok(e.getSnapshot().interior.objects.some(o => o.id === 'object_sofa'));
+  } finally { globalThis.fetch = original; setStoredApiKey(''); }
+});

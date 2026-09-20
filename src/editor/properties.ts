@@ -1,3 +1,4 @@
+import { escapeHtml, labelControls, reportEditorError } from './ui.ts';
 import type { MoppleProjectEngine } from '../project/engine.ts';
 import { distance, polygonArea, roomPolygon } from '../project/geometry.ts';
 import type { MoppleInteriorObject, MoppleProject, MoppleRoom, MoppleWall } from '../project/schema.ts';
@@ -48,7 +49,10 @@ export class PropertyPanel {
     this.render();
   }
 
+  private act(action: () => void) { try { action(); } catch (error) { reportEditorError(error); this.render(); } }
+
   private render() {
+    queueMicrotask(() => labelControls(this.container));
     if (!this.selected) {
       this.renderProjectProperties();
       return;
@@ -94,7 +98,7 @@ export class PropertyPanel {
         <div class="prop-group">
           <div class="prop-label">Project Name</div>
           <div class="prop-value">
-            <input type="text" id="prop-project-name" class="input-text" value="${this.project.project.name}" />
+            <input type="text" id="prop-project-name" class="input-text" value="${escapeHtml(this.project.project.name)}" />
           </div>
         </div>
 
@@ -136,11 +140,12 @@ export class PropertyPanel {
         <div class="prop-section-title">AI Engine Settings</div>
         <button class="btn btn-secondary" id="btn-open-apikey">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          Configure Gemini API Key
+          Configure NVIDIA NIM
         </button>
       </div>
     `;
 
+    this.container.querySelector('#prop-project-name')?.addEventListener('change', e => this.act(() => this.engine.renameProject((e.target as HTMLInputElement).value)));
     this.container.querySelector('#btn-export-project')?.addEventListener('click', this.onExport);
     this.container.querySelector('#btn-import-project')?.addEventListener('click', this.onImport);
     this.container.querySelector('#btn-open-apikey')?.addEventListener('click', this.onOpenApiKeyModal);
@@ -167,7 +172,7 @@ export class PropertyPanel {
           <div class="prop-label">Room</div>
           <select class="input-select" id="prop-obj-room">
             ${this.project.building.rooms.map(r => `
-              <option value="${r.id}" ${r.id === obj.roomId ? 'selected' : ''}>${r.name}</option>
+              <option value="${r.id}" ${r.id === obj.roomId ? 'selected' : ''}>${escapeHtml(r.name)}</option>
             `).join('')}
           </select>
         </div>
@@ -212,19 +217,25 @@ export class PropertyPanel {
       </div>
     `;
 
+    const scaleObject = () => this.act(() => this.engine.scaleInteriorObject(obj.id, {
+      x: Number((this.container.querySelector('#prop-scale-x') as HTMLInputElement).value),
+      y: Number((this.container.querySelector('#prop-scale-y') as HTMLInputElement).value),
+      z: Number((this.container.querySelector('#prop-scale-z') as HTMLInputElement).value),
+    }));
+    for (const axis of ['x', 'y', 'z']) this.container.querySelector(`#prop-scale-${axis}`)?.addEventListener('change', scaleObject);
     // Bind inputs
     this.container.querySelector('#btn-delete-prop')?.addEventListener('click', this.onDeleteSelected);
 
     const roomSelect = this.container.querySelector('#prop-obj-room') as HTMLSelectElement | null;
     roomSelect?.addEventListener('change', () => {
-      this.engine.moveInteriorObject(obj.id, obj.position, obj.rotation, roomSelect.value);
+      this.act(() => this.engine.moveInteriorObject(obj.id, obj.position, obj.rotation, roomSelect.value));
     });
 
     const updatePos = () => {
       const x = parseFloat((this.container.querySelector('#prop-pos-x') as HTMLInputElement).value) || 0;
       const y = parseFloat((this.container.querySelector('#prop-pos-y') as HTMLInputElement).value) || 0;
       const z = parseFloat((this.container.querySelector('#prop-pos-z') as HTMLInputElement).value) || 0;
-      this.engine.moveInteriorObject(obj.id, { x, y, z }, obj.rotation, obj.roomId);
+      this.act(() => this.engine.moveInteriorObject(obj.id, { x, y, z }, obj.rotation, obj.roomId));
     };
 
     this.container.querySelector('#prop-pos-x')?.addEventListener('change', updatePos);
@@ -234,7 +245,7 @@ export class PropertyPanel {
     this.container.querySelector('#prop-rot-y')?.addEventListener('change', (e) => {
       const deg = parseFloat((e.target as HTMLInputElement).value) || 0;
       const rad = (-deg * Math.PI) / 180;
-      this.engine.moveInteriorObject(obj.id, obj.position, { x: 0, y: rad, z: 0 }, obj.roomId);
+      this.act(() => this.engine.moveInteriorObject(obj.id, obj.position, { ...obj.rotation, y: rad }, obj.roomId));
     });
   }
 
@@ -247,7 +258,7 @@ export class PropertyPanel {
 
     this.container.innerHTML = `
       <div class="panel-header">
-        <div class="panel-title">ROOM: ${room.name}</div>
+        <div class="panel-title">ROOM: ${escapeHtml(room.name)}</div>
         <button class="icon-button" id="btn-delete-prop" title="Delete Room">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
         </button>
@@ -256,7 +267,7 @@ export class PropertyPanel {
       <div class="panel-content">
         <div class="prop-group">
           <div class="prop-label">Room Name</div>
-          <input type="text" class="input-text" id="prop-room-name" value="${room.name}" />
+          <input type="text" class="input-text" id="prop-room-name" value="${escapeHtml(room.name)}" />
         </div>
 
         <div class="prop-group">
@@ -285,7 +296,7 @@ export class PropertyPanel {
 
         <div class="prop-group">
           <div class="prop-label">Style</div>
-          <input type="text" class="input-text" id="prop-room-style" value="${room.style || 'modern'}" />
+          <input type="text" class="input-text" id="prop-room-style" value="${escapeHtml(room.style || 'modern')}" />
         </div>
 
         <div class="divider"></div>
@@ -308,20 +319,20 @@ export class PropertyPanel {
     this.container.querySelector('#btn-delete-prop')?.addEventListener('click', this.onDeleteSelected);
 
     this.container.querySelector('#prop-room-name')?.addEventListener('change', (e) => {
-      this.engine.updateRoom(room.id, { name: (e.target as HTMLInputElement).value });
+      this.act(() => this.engine.updateRoom(room.id, { name: (e.target as HTMLInputElement).value }));
     });
 
     this.container.querySelector('#prop-room-type')?.addEventListener('change', (e) => {
-      this.engine.updateRoom(room.id, { type: (e.target as HTMLSelectElement).value as MoppleRoom['type'] });
+      this.act(() => this.engine.updateRoom(room.id, { type: (e.target as HTMLSelectElement).value as MoppleRoom['type'] }));
     });
 
     this.container.querySelector('#prop-room-height')?.addEventListener('change', (e) => {
-      const height = parseFloat((e.target as HTMLInputElement).value) || 2.8;
-      this.engine.updateRoom(room.id, { height });
+      const height = Number((e.target as HTMLInputElement).value);
+      this.act(() => this.engine.updateRoom(room.id, { height }));
     });
 
     this.container.querySelector('#prop-room-style')?.addEventListener('change', (e) => {
-      this.engine.changeRoomStyle(room.id, (e.target as HTMLInputElement).value);
+      this.act(() => this.engine.changeRoomStyle(room.id, (e.target as HTMLInputElement).value));
     });
 
     this.container.querySelector('#btn-apply-resize')?.addEventListener('click', () => {
@@ -331,7 +342,7 @@ export class PropertyPanel {
         try {
           this.engine.resizeRoom(room.id, w, d);
         } catch (err) {
-          alert('Could not resize room: MVP resize requires rectangular shape.');
+          reportEditorError(err); this.render();
         }
       }
     });
@@ -391,13 +402,13 @@ export class PropertyPanel {
     this.container.querySelector('#btn-delete-prop')?.addEventListener('click', this.onDeleteSelected);
 
     this.container.querySelector('#prop-wall-thick')?.addEventListener('change', (e) => {
-      const thickness = parseFloat((e.target as HTMLInputElement).value) || 0.2;
-      this.engine.updateWall(wall.id, { thickness });
+      const thickness = Number((e.target as HTMLInputElement).value);
+      this.act(() => this.engine.updateWall(wall.id, { thickness }));
     });
 
     this.container.querySelector('#prop-wall-height')?.addEventListener('change', (e) => {
-      const height = parseFloat((e.target as HTMLInputElement).value) || 2.8;
-      this.engine.updateWall(wall.id, { height });
+      const height = Number((e.target as HTMLInputElement).value);
+      this.act(() => this.engine.updateWall(wall.id, { height }));
     });
 
     const updatePoints = () => {
@@ -408,7 +419,7 @@ export class PropertyPanel {
       try {
         this.engine.moveWall(wall.id, { x: sx, z: sz }, { x: ex, z: ez });
       } catch (err) {
-        console.error('Failed to move wall', err);
+        reportEditorError(err); this.render();
       }
     };
 

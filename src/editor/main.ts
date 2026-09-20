@@ -1,12 +1,13 @@
+import { errorMessage, labelControls, reportEditorError } from './ui.ts';
 import '@fontsource-variable/inter';
 import './editor.css';
 import example from '../../examples/modern-house.mopple?raw';
-import { exportMoppleFile, importMoppleFile } from '../project/files.ts';
+import { downloadMoppleFile, importMoppleFile } from '../project/files.ts';
 import { MoppleProjectEngine } from '../project/engine.ts';
 import { roomPolygon } from '../project/geometry.ts';
 import type { MoppleInteriorObject } from '../project/schema.ts';
 import { parseProject } from '../project/validation.ts';
-import { executeAiPrompt, getStoredApiKey, getStoredModel, setStoredApiKey, setStoredModel } from './ai.ts';
+import { executeAiPrompt, isHouseRequest, getStoredApiKey, getStoredModel, setStoredApiKey, setStoredModel } from './ai.ts';
 import { Canvas2D, type SelectedEntity } from './canvas2d.ts';
 import { Canvas3D } from './canvas3d.ts';
 import { LayersPanel } from './layers.ts';
@@ -16,7 +17,8 @@ const AUTOSAVE_STORAGE_KEY = 'mopple_editor_project';
 
 // Initialize Project Engine from local storage or fallback example
 function initializeEngine(): MoppleProjectEngine {
-  const saved = localStorage.getItem(AUTOSAVE_STORAGE_KEY);
+  let saved: string | null = null;
+  try { saved = localStorage.getItem(AUTOSAVE_STORAGE_KEY); } catch { /* Private browsing may disable storage. */ }
   if (saved) {
     try {
       return new MoppleProjectEngine(parseProject(saved));
@@ -29,6 +31,8 @@ function initializeEngine(): MoppleProjectEngine {
 
 export function initEditor() {
   const engine = initializeEngine();
+  const events = new AbortController();
+  const cleanups: (() => void)[] = [];
   let selectedEntity: SelectedEntity | null = null;
   let viewMode: '2d' | 'split' | '3d' = 'split';
 
@@ -47,6 +51,12 @@ export function initEditor() {
   const aiInput = document.getElementById('ai-prompt-input') as HTMLInputElement;
   const aiSubmit = document.getElementById('btn-ai-submit') as HTMLButtonElement;
   const aiStatus = document.getElementById('ai-status') as HTMLElement;
+  let statusTimeout: ReturnType<typeof setTimeout> | null = null;
+  function showStatus(message: string, type: 'error' | 'success' | 'loading') {
+    if (statusTimeout) clearTimeout(statusTimeout);
+    aiStatus.className = `ai-status visible ${type}`; aiStatus.textContent = message;
+  }
+  window.addEventListener('mopple-error', event => showStatus(String((event as CustomEvent).detail), 'error'), { signal: events.signal });
   const aiEngineBadge = document.getElementById('ai-engine-badge') as HTMLElement | null;
   const engineBadgeText = document.getElementById('engine-badge-text') as HTMLElement | null;
 
@@ -63,10 +73,9 @@ export function initEditor() {
     onSelect: (entity) => handleSelect(entity),
   });
 
-  const canvas3d = new Canvas3D(pane3D, {
-    engine,
-    onSelect: (entity) => handleSelect(entity),
-  });
+  let canvas3d: Canvas3D | undefined;
+  try { canvas3d = new Canvas3D(pane3D, { engine, onSelect: entity => handleSelect(entity), onError: reportEditorError }); }
+  catch { pane3D.textContent = '3D is unavailable in this browser. You can continue editing in 2D.'; showStatus('WebGL is unavailable; 2D editing is still available.', 'error'); }
 
   // 2. Instantiate Panels
   const layersPanel = new LayersPanel(layersContainer, {
@@ -88,7 +97,7 @@ export function initEditor() {
   function handleSelect(entity: SelectedEntity | null) {
     selectedEntity = entity;
     canvas2d.setSelection(entity);
-    canvas3d.setSelection(entity);
+    canvas3d?.setSelection(entity);
     layersPanel.setSelection(entity);
     propertyPanel.setSelection(entity);
   }
@@ -114,16 +123,14 @@ export function initEditor() {
       }
     }
 
-    // Offset slightly
-    posX += (Math.random() - 0.5) * 0.6;
-    posZ += (Math.random() - 0.5) * 0.6;
+    if (!targetRoom) throw new Error('Create a house before adding furniture.');
 
     const newObj: MoppleInteriorObject = {
-      id: `object_${kind}_${Date.now().toString(36).slice(-4)}`,
+      id: `object_${kind}_${crypto.randomUUID()}`,
       assetId: `${kind}_item`,
       kind,
-      roomId: targetRoom ? targetRoom.id : 'room_ground',
-      position: { x: Math.round(posX * 10) / 10, y: 0, z: Math.round(posZ * 10) / 10 },
+      roomId: targetRoom.id,
+      position: { x: Math.round(posX * 10) / 10, y: p.building.floors.find(f => f.id === targetRoom.floorId)!.elevation, z: Math.round(posZ * 10) / 10 },
       rotation: { x: 0, y: 0, z: 0 },
       scale: { x: 1, y: 1, z: 1 },
     };
@@ -138,13 +145,14 @@ export function initEditor() {
     try {
       if (selectedEntity.type === 'object') {
         engine.removeInteriorObject(selectedEntity.id);
+      } else if (selectedEntity.type === 'room') {
+        engine.removeRoom(selectedEntity.id);
       } else if (selectedEntity.type === 'wall') {
         engine.removeWall(selectedEntity.id);
       }
       handleSelect(null);
     } catch (err) {
-      console.warn('Could not delete entity:', err);
-      alert('Cannot delete this item: other entities depend on it.');
+      reportEditorError(err);
     }
   }
 
@@ -152,7 +160,9 @@ export function initEditor() {
   function setViewMode(mode: '2d' | 'split' | '3d') {
     viewMode = mode;
     document.querySelectorAll('.view-tab').forEach(tab => {
-      tab.classList.toggle('active', (tab as HTMLElement).dataset.view === mode);
+      const active = (tab as HTMLElement).dataset.view === mode;
+      tab.classList.toggle('active', active); tab.setAttribute('aria-selected', String(active));
+      (tab as HTMLElement).tabIndex = active ? 0 : -1;
     });
 
     if (mode === '2d') {
@@ -195,53 +205,41 @@ export function initEditor() {
     }
   });
 
-  engine.subscribeHistory(() => syncHistoryState());
+  cleanups.push(engine.subscribeHistory(() => syncHistoryState()));
   syncHistoryState();
 
-  // Autosave to LocalStorage
+  // Debounced autosave, with synchronous flush at navigation/background boundaries.
   let saveDebounceTimer: number | null = null;
-  engine.subscribe(p => {
-    projectTitle.value = p.project.name;
+  let pendingSave = false;
+  function flushSave() {
     if (saveDebounceTimer !== null) clearTimeout(saveDebounceTimer);
-    if (saveText) saveText.textContent = 'Saving...';
-
-    saveDebounceTimer = window.setTimeout(() => {
-      try {
-        localStorage.setItem(AUTOSAVE_STORAGE_KEY, engine.saveProject());
-        if (saveText) saveText.textContent = 'Saved';
-      } catch (err) {
-        console.error('Autosave error:', err);
-      }
-    }, 600);
-  });
-
-  // Project title edit
-  projectTitle.addEventListener('change', () => {
-    const snap = engine.getSnapshot();
-    snap.project.name = projectTitle.value.trim() || 'Untitled project';
-    engine.loadProject(snap);
-  });
-
-  // Export File
-  function handleExport() {
-    const snap = engine.getSnapshot();
-    const json = engine.saveProject();
-    const filename = `${snap.project.name.toLowerCase().replace(/[^a-z0-9]/g, '-') || 'house'}.mopple`;
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
+    saveDebounceTimer = null;
+    if (!pendingSave) return;
+    try { localStorage.setItem(AUTOSAVE_STORAGE_KEY, engine.saveProject()); pendingSave = false; saveText.textContent = 'Saved'; }
+    catch { saveText.textContent = 'Not saved'; showStatus('Browser storage is unavailable or full. Export your project to keep your changes.', 'error'); }
   }
+  projectTitle.value = engine.getSnapshot().project.name;
+  cleanups.push(engine.subscribe(p => {
+    projectTitle.value = p.project.name; syncFloorPicker();
+    pendingSave = true; saveText.textContent = 'Saving…';
+    if (saveDebounceTimer !== null) clearTimeout(saveDebounceTimer);
+    saveDebounceTimer = window.setTimeout(flushSave, 600);
+  }));
+  window.addEventListener('pagehide', flushSave, { signal: events.signal });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) flushSave(); }, { signal: events.signal });
+  window.addEventListener('beforeunload', event => { flushSave(); if (pendingSave) { event.preventDefault(); event.returnValue = ''; } }, { signal: events.signal });
+  projectTitle.addEventListener('change', () => {
+    try { engine.renameProject(projectTitle.value.trim() || 'Untitled project'); }
+    catch (error) { reportEditorError(error); projectTitle.value = engine.getSnapshot().project.name; }
+  });
+  function handleExport() { downloadMoppleFile(engine); }
 
   document.getElementById('btn-export')?.addEventListener('click', handleExport);
 
   // Import File
   const fileInput = document.createElement('input');
   fileInput.type = 'file';
-  fileInput.accept = '.mopple,.json';
+  fileInput.accept = '.mopple';
   fileInput.style.display = 'none';
   document.body.appendChild(fileInput);
 
@@ -255,31 +253,29 @@ export function initEditor() {
     const file = fileInput.files?.[0];
     if (!file) return;
     try {
-      const text = await file.text();
-      engine.importProject(text);
-      handleSelect(null);
-    } catch (err: any) {
-      alert(`Could not import project: ${err.message || 'Invalid format'}`);
+      await importMoppleFile(engine, file);
+      handleSelect(null); canvas2d.resetView(); canvas3d?.resetCamera();
+    } catch (err) {
+      reportEditorError(err);
     } finally {
       fileInput.value = '';
     }
   });
 
   // Drag and drop .mopple file onto window
-  window.addEventListener('dragover', e => e.preventDefault());
+  window.addEventListener('dragover', e => e.preventDefault(), { signal: events.signal });
   window.addEventListener('drop', async e => {
     e.preventDefault();
     const file = e.dataTransfer?.files?.[0];
-    if (file && (file.name.endsWith('.mopple') || file.name.endsWith('.json'))) {
+    if (file && (/\.mopple$/i.test(file.name))) {
       try {
-        const text = await file.text();
-        engine.importProject(text);
-        handleSelect(null);
-      } catch (err: any) {
-        alert(`Could not import dropped file: ${err.message || 'Invalid format'}`);
+        await importMoppleFile(engine, file);
+        handleSelect(null); canvas2d.resetView(); canvas3d?.resetCamera();
+      } catch (err) {
+        reportEditorError(err);
       }
     }
-  });
+  }, { signal: events.signal });
 
   // AI Engine Badge Synchronization
   function updateEngineBadge() {
@@ -303,78 +299,41 @@ export function initEditor() {
   aiEngineBadge?.addEventListener('click', () => openApiKeyModal());
   updateEngineBadge();
 
-  // AI Prompt Submission
-  let statusTimeout: ReturnType<typeof setTimeout> | null = null;
-
+  // One outstanding request; errors preserve input and never guess a fallback edit.
+  let aiBusy = false;
   async function runAiPrompt(promptText: string) {
+    if (aiBusy) return;
     const text = promptText.trim();
-    if (!text) {
-      aiStatus.className = 'ai-status visible error';
-      aiStatus.innerHTML = '<span class="status-icon">⚠️</span><span>Please enter a prompt (e.g. "expand bedroom by 1m" or "add a sofa")</span>';
-      if (statusTimeout) clearTimeout(statusTimeout);
-      statusTimeout = setTimeout(() => {
-        aiStatus.classList.remove('visible');
-      }, 4000);
-      return;
-    }
-
-    if (statusTimeout) clearTimeout(statusTimeout);
-    const hasKey = Boolean(getStoredApiKey());
-
-    aiStatus.className = 'ai-status visible loading';
-    aiStatus.innerHTML = `<span class="ai-spinner"></span><span>${
-      hasKey ? `GLM 5.3 Flash (NVIDIA NIM) is processing architecture changes...` : 'Analyzing prompt locally...'
-    }</span>`;
-    aiSubmit.disabled = true;
-
+    if (!text) { showStatus('Enter a house description or a change to make.', 'error'); aiInput.focus(); return; }
+    aiBusy = true; aiSubmit.disabled = true;
+    document.querySelectorAll<HTMLButtonElement>('.ai-chip').forEach(b => b.disabled = true);
+    showStatus(getStoredApiKey() ? `Asking ${getStoredModel()}…` : 'Applying offline design command…', 'loading');
     try {
-      const res = await executeAiPrompt(text, engine, selectedEntity?.id);
-      aiStatus.className = 'ai-status visible success';
-      aiStatus.innerHTML = `<span class="status-icon">✓</span><span>${res.message}</span>`;
-      aiInput.value = '';
-      statusTimeout = setTimeout(() => {
-        aiStatus.classList.remove('visible');
-      }, 6000);
-    } catch (err: any) {
-      aiStatus.className = 'ai-status visible error';
-      const msg = err.message || 'Unknown error occurred';
-      aiStatus.innerHTML = `<span class="status-icon">⚠️</span><span>${msg}</span>`;
-      console.error('AI execution error:', err);
-    } finally {
-      aiSubmit.disabled = false;
-    }
+      const result = await executeAiPrompt(text, engine, selectedEntity?.id);
+      showStatus(result.message, 'success'); aiInput.value = ''; handleSelect(null);
+      if (isHouseRequest(text)) { canvas2d.resetView(); canvas3d?.resetCamera(); }
+    } catch (error) { showStatus(errorMessage(error), 'error'); }
+    finally { aiBusy = false; aiSubmit.disabled = false; document.querySelectorAll<HTMLButtonElement>('.ai-chip').forEach(b => b.disabled = false); }
   }
-
-  aiSubmit.addEventListener('click', () => runAiPrompt(aiInput.value));
-  aiInput.addEventListener('keydown', e => {
-    if (e.key === 'Enter') runAiPrompt(aiInput.value);
-  });
-  aiInput.addEventListener('input', () => {
-    if (aiStatus.classList.contains('error')) {
-      aiStatus.classList.remove('visible');
-    }
-  });
-
-  // AI Chip Buttons
-  document.querySelectorAll('.ai-chip').forEach(chip => {
-    chip.addEventListener('click', () => {
-      const text = chip.getAttribute('data-prompt') || chip.textContent?.trim() || '';
-      aiInput.value = text;
-      runAiPrompt(text);
-    });
-  });
+  aiSubmit.addEventListener('click', () => void runAiPrompt(aiInput.value));
+  aiInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); void runAiPrompt(aiInput.value); } });
+  document.querySelectorAll<HTMLButtonElement>('.ai-chip').forEach(chip => chip.addEventListener('click', () => {
+    aiInput.value = chip.dataset.prompt || ''; void runAiPrompt(aiInput.value);
+  }));
 
   // API Key & Model Modal
+  let modalTrigger: HTMLElement | null = null;
   function openApiKeyModal() {
+    modalTrigger = document.activeElement as HTMLElement | null;
     apiKeyInput.value = getStoredApiKey();
     if (geminiModelSelect) {
       geminiModelSelect.value = getStoredModel();
     }
-    apiKeyModal.classList.add('show');
+    apiKeyModal.classList.add('show'); document.getElementById('editor-app')!.inert = true; apiKeyInput.focus();
   }
 
   function closeApiKeyModal() {
-    apiKeyModal.classList.remove('show');
+    apiKeyModal.classList.remove('show'); document.getElementById('editor-app')!.inert = false; modalTrigger?.focus();
   }
 
   document.getElementById('btn-apikey')?.addEventListener('click', openApiKeyModal);
@@ -383,6 +342,15 @@ export function initEditor() {
     if (e.target === apiKeyModal) closeApiKeyModal();
   });
 
+  apiKeyModal.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.stopPropagation(); closeApiKeyModal(); }
+    if (event.key === 'Tab') {
+      const controls = [...apiKeyModal.querySelectorAll<HTMLElement>('input, select, button, a')];
+      const first = controls[0], last = controls.at(-1)!;
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
+  });
   btnSaveApiKey.addEventListener('click', () => {
     setStoredApiKey(apiKeyInput.value);
     if (geminiModelSelect) {
@@ -393,7 +361,7 @@ export function initEditor() {
     const hasKey = Boolean(getStoredApiKey());
     if (hasKey) {
       aiStatus.className = 'ai-status visible success';
-      aiStatus.innerHTML = '<span class="status-icon">✓</span><span>GLM 5.3 Flash (NVIDIA NIM) configured and active!</span>';
+      aiStatus.textContent = `${getStoredModel()} configured. The key is kept only until this tab reloads.`;
       if (statusTimeout) clearTimeout(statusTimeout);
       statusTimeout = setTimeout(() => aiStatus.classList.remove('visible'), 4000);
     }
@@ -404,14 +372,15 @@ export function initEditor() {
   document.getElementById('hud-zoom-out')?.addEventListener('click', () => canvas2d.zoomOut());
   document.getElementById('hud-reset')?.addEventListener('click', () => {
     canvas2d.resetView();
-    canvas3d.resetCamera();
+    canvas3d?.resetCamera();
   });
-  document.getElementById('hud-view-iso')?.addEventListener('click', () => canvas3d.setViewPreset('isometric'));
-  document.getElementById('hud-view-top')?.addEventListener('click', () => canvas3d.setViewPreset('top'));
+  document.getElementById('hud-view-iso')?.addEventListener('click', () => canvas3d?.setViewPreset('isometric'));
+  document.getElementById('hud-view-top')?.addEventListener('click', () => canvas3d?.setViewPreset('top'));
 
   // Global Keyboard Shortcuts
   window.addEventListener('keydown', e => {
     const target = e.target as HTMLElement;
+    if (apiKeyModal.classList.contains('show')) return;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
       return;
     }
@@ -449,10 +418,34 @@ export function initEditor() {
     if (e.key === '1') setViewMode('2d');
     else if (e.key === '2') setViewMode('split');
     else if (e.key === '3') setViewMode('3d');
-  });
+  }, { signal: events.signal });
 
-  // Initial set view
-  setViewMode('split');
+  const floorPicker = document.getElementById('floor-picker') as HTMLSelectElement;
+  function syncFloorPicker() {
+    const floors = engine.getSnapshot().building.floors;
+    const selected = floorPicker?.value;
+    if (!floorPicker) return;
+    floorPicker.replaceChildren(...floors.map(f => { const option = document.createElement('option'); option.value = f.id; option.textContent = f.name; return option; }));
+    floorPicker.value = floors.some(f => f.id === selected) ? selected : floors[0]?.id ?? '';
+    if (floorPicker.value) canvas2d.setFloor(floorPicker.value);
+  }
+  floorPicker.addEventListener('change', () => canvas2d.setFloor(floorPicker.value)); syncFloorPicker();
+  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-panel]')) button.addEventListener('click', () => {
+    const panel = button.dataset.panel!;
+    document.querySelectorAll<HTMLElement>('.panel-sidebar, .panel-properties').forEach(p => p.classList.toggle('mobile-open', p.id === panel && !p.classList.contains('mobile-open')));
+    document.querySelectorAll<HTMLButtonElement>('[data-panel]').forEach(b => b.setAttribute('aria-expanded', String(document.getElementById(b.dataset.panel!)!.classList.contains('mobile-open'))));
+  });
+  document.querySelector('.view-switcher')?.addEventListener('keydown', event => {
+    const e = event as KeyboardEvent; if (!['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+    e.preventDefault(); const tabs = [...document.querySelectorAll<HTMLButtonElement>('.view-tab')];
+    const i = tabs.indexOf(document.activeElement as HTMLButtonElement), next = tabs[(i + (e.key === 'ArrowRight' ? 1 : 2)) % 3];
+    next.click(); next.focus();
+  });
+  labelControls(document.body);
+  setViewMode(matchMedia('(max-width: 760px)').matches || !canvas3d ? '2d' : 'split');
+  function dispose() { flushSave(); events.abort(); cleanups.forEach(stop => stop()); canvas2d.destroy(); canvas3d?.destroy(); layersPanel.destroy(); propertyPanel.destroy(); fileInput.remove(); }
+  if (import.meta.hot) import.meta.hot.dispose(dispose);
+  window.addEventListener('pagehide', e => { if (!e.persisted) dispose(); }, { signal: events.signal });
 }
 
 // Auto-run when loaded as module

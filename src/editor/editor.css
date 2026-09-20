@@ -822,3 +822,65 @@ html, body {
   gap: 8px;
   margin-top: 20px;
 }
+
+/* Editor resilience: preserve the canvas, expose panels on small screens. */
+:root { --text-muted: #99aaa2; }
+#editor-app { height: 100dvh; }
+.editor-workspace, .viewport-container, .canvas-pane { min-width: 0; min-height: 0; }
+.panel-sidebar, .panel-properties { flex-shrink: 0; }
+.layer-item { width: 100%; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+.layer-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-title { overflow-wrap: anywhere; }
+.workspace-tools { display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: var(--bg-surface); border-bottom: 1px solid var(--border-subtle); }
+.workspace-tools label { font-size: 12px; color: var(--text-secondary); }
+.workspace-tools select { width: auto; max-width: 240px; }
+.panel-toggle { display: none; }
+:where(button, input, select, a, canvas):focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
+canvas { touch-action: none; }
+.modal-card { width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; }
+.ai-status { max-height: 140px; overflow-y: auto; overflow-wrap: anywhere; white-space: pre-wrap; }
+.ai-prompt-input, .ai-chips-row { min-width: 0; }
+@media (max-width: 1050px) {
+  .panel-sidebar { width: 200px; }
+  .panel-properties { width: 230px; }
+  .top-bar { gap: 8px; padding-inline: 10px; }
+  .brand-badge, .save-indicator { display: none; }
+  .project-title-input { width: 120px; min-width: 0; }
+}
+@media (max-width: 760px) {
+  .top-bar { height: auto; min-height: 48px; flex-wrap: wrap; padding-block: 6px; flex-shrink: 0; }
+  .brand-section { flex: 1; min-width: 0; gap: 6px; }
+  .brand-link { display: none; }
+  .project-title-input { width: 100%; font-size: 16px; }
+  .nav-actions { gap: 2px; }
+  .view-switcher { order: 3; width: 100%; justify-content: center; }
+  .view-tab { flex: 1; min-height: 44px; }
+  .icon-button { width: 44px; height: 44px; flex-shrink: 0; }
+  .history-group { gap: 0; }
+  .workspace-tools { flex-shrink: 0; }
+  .workspace-tools select { flex: 1; min-width: 0; max-width: 160px; }
+  .workspace-tools label { display: none; }
+  .panel-toggle { display: inline-flex; min-height: 44px; }
+  .panel-sidebar, .panel-properties { display: none; position: absolute; top: 0; bottom: 0; width: min(320px, calc(100% - 40px)); z-index: 100; }
+  .panel-sidebar { left: 0; }
+  .panel-properties { right: 0; }
+  .panel-sidebar.mobile-open, .panel-properties.mobile-open { display: flex; }
+  .viewport-container { width: 100%; flex-direction: column; padding-bottom: 140px; }
+  .canvas-pane { height: auto; flex: 1; }
+  .canvas-pane.split-left { border-right: 0; border-bottom: 1px solid var(--border-subtle); }
+  .viewport-hud { right: 6px; top: 6px; gap: 0; }
+  .ai-floating-bar { bottom: 8px; width: calc(100% - 16px); padding: 8px; box-sizing: border-box; }
+  .ai-bar-header { flex-wrap: wrap; gap: 4px; }
+  .ai-chips-row { flex-basis: 100%; }
+  .ai-engine-badge { margin-left: auto; }
+  .ai-chip { min-height: 32px; }
+  .ai-input-row { gap: 4px; }
+  .ai-icon { display: none; }
+  input, select, .ai-prompt-input { font-size: 16px !important; min-height: 44px; }
+  .ai-input-row .btn { min-height: 44px; padding-inline: 10px; }
+  .layer-item { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-spinner { animation: none; }
+  .btn, .icon-button, .view-tab, .layer-item { transition: none; }
+}

@@ -1,3 +1,4 @@
+import { reportEditorError } from './ui.ts';
 import type { MoppleProjectEngine } from '../project/engine.ts';
 import { distance, polygonArea, roomPolygon } from '../project/geometry.ts';
 import type { MoppleInteriorObject, MoppleProject, MoppleRoom, MoppleWall, Point, Vector } from '../project/schema.ts';
@@ -49,17 +50,22 @@ export class Canvas2D {
   private dragWallStartPoint: Point = { x: 0, z: 0 };
 
   private spacePressed = false;
+  private events = new AbortController();
+  private dpr = 1;
+  private floorId: string | undefined;
   private resizeObserver: ResizeObserver;
   private unsubscribe: () => void;
 
   constructor(container: HTMLElement, options: Canvas2DOptions) {
     this.engine = options.engine;
     this.project = options.engine.getSnapshot();
+    this.floorId = this.project.building.floors[0]?.id;
     this.onSelect = options.onSelect;
 
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'mopple-canvas-2d';
     this.canvas.tabIndex = 0;
+    this.canvas.setAttribute('aria-label', 'House floor plan. Select items using the Layers panel and edit using Properties.');
     container.appendChild(this.canvas);
 
     const ctx = this.canvas.getContext('2d');
@@ -75,6 +81,7 @@ export class Canvas2D {
     // Subscribe to engine
     this.unsubscribe = this.engine.subscribe(p => {
       this.project = p;
+      if (!p.building.floors.some(f => f.id === this.floorId)) this.floorId = p.building.floors[0]?.id;
       this.render();
     });
 
@@ -85,7 +92,7 @@ export class Canvas2D {
   }
 
   public destroy() {
-    this.unsubscribe();
+    this.unsubscribe(); this.events.abort();
     this.resizeObserver.disconnect();
     this.canvas.remove();
   }
@@ -94,6 +101,11 @@ export class Canvas2D {
     this.selected = entity;
     this.render();
   }
+
+  public setFloor(id: string) { if (this.floorId !== id) { this.floorId = id; this.centerView(); } this.render(); }
+  private get walls() { return this.project.building.walls.filter(w => w.floorId === this.floorId); }
+  private get rooms() { return this.project.building.rooms.filter(r => r.floorId === this.floorId); }
+  private get objects() { return this.project.interior.objects.filter(o => this.rooms.some(r => r.id === o.roomId)); }
 
   public getSelection(): SelectedEntity | null {
     return this.selected;
@@ -105,17 +117,22 @@ export class Canvas2D {
   }
 
   public zoomIn() {
-    this.setZoom(this.zoom * 1.25, this.canvas.width / 2, this.canvas.height / 2);
+    this.setZoom(this.zoom * 1.25, this.canvas.clientWidth / 2, this.canvas.clientHeight / 2);
   }
 
   public zoomOut() {
-    this.setZoom(this.zoom / 1.25, this.canvas.width / 2, this.canvas.height / 2);
+    this.setZoom(this.zoom / 1.25, this.canvas.clientWidth / 2, this.canvas.clientHeight / 2);
   }
 
   private centerView() {
-    const rect = this.canvas.getBoundingClientRect();
-    this.panX = (rect.width || 800) / 2;
-    this.panY = (rect.height || 600) / 2;
+    const rect = this.canvas.parentElement!.getBoundingClientRect();
+    const points = this.walls.flatMap(w => [w.start, w.end]);
+    const minX = points.length ? Math.min(...points.map(p => p.x)) : -5, maxX = points.length ? Math.max(...points.map(p => p.x)) : 5;
+    const minZ = points.length ? Math.min(...points.map(p => p.z)) : -4, maxZ = points.length ? Math.max(...points.map(p => p.z)) : 4;
+    const usableHeight = Math.max(120, rect.height - 170);
+    this.zoom = Math.max(this.minZoom, Math.min(this.maxZoom, .85 * Math.min(rect.width / Math.max(1, maxX - minX), usableHeight / Math.max(1, maxZ - minZ))));
+    this.panX = rect.width / 2 - (minX + maxX) / 2 * this.zoom;
+    this.panY = 70 + usableHeight / 2 - (minZ + maxZ) / 2 * this.zoom;
   }
 
   private setZoom(newZoom: number, anchorScreenX: number, anchorScreenY: number) {
@@ -134,14 +151,14 @@ export class Canvas2D {
     const rect = this.canvas.parentElement?.getBoundingClientRect();
     if (!rect || !rect.width || !rect.height) return;
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = this.dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.canvas.width = Math.floor(rect.width * dpr);
     this.canvas.height = Math.floor(rect.height * dpr);
     this.canvas.style.width = `${rect.width}px`;
     this.canvas.style.height = `${rect.height}px`;
 
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.render();
+    this.centerView(); this.render();
   }
 
   public worldToScreen(p: Point): { x: number; y: number } {
@@ -181,14 +198,14 @@ export class Canvas2D {
         this.spacePressed = true;
         this.canvas.style.cursor = 'grab';
       }
-    });
+    }, { signal: this.events.signal });
 
     window.addEventListener('keyup', (e) => {
       if (e.code === 'Space') {
         this.spacePressed = false;
         if (!this.isPanning) this.canvas.style.cursor = 'default';
       }
-    });
+    }, { signal: this.events.signal });
 
     this.canvas.addEventListener('pointerdown', (e) => {
       const rect = this.canvas.getBoundingClientRect();
@@ -351,6 +368,7 @@ export class Canvas2D {
     });
 
     const finishPointer = (e: PointerEvent) => {
+      if (e.type === 'pointercancel') { this.isPanning = this.isDraggingObject = this.isRotatingObject = this.isDraggingWallHandle = false; this.activeDraggedObject = null; this.project = this.engine.getSnapshot(); this.render(); return; }
       if (this.canvas.hasPointerCapture(e.pointerId)) {
         this.canvas.releasePointerCapture(e.pointerId);
       }
@@ -368,7 +386,7 @@ export class Canvas2D {
         try {
           this.engine.moveInteriorObject(obj.id, obj.position, obj.rotation, obj.roomId);
         } catch (err) {
-          console.error('Failed to commit moved object', err);
+          this.project = this.engine.getSnapshot(); reportEditorError(err);
         }
       }
 
@@ -379,7 +397,7 @@ export class Canvas2D {
           try {
             this.engine.moveInteriorObject(obj.id, obj.position, obj.rotation, obj.roomId);
           } catch (err) {
-            console.error('Failed to commit rotated object', err);
+            this.project = this.engine.getSnapshot(); reportEditorError(err);
           }
         }
       }
@@ -391,7 +409,7 @@ export class Canvas2D {
           try {
             this.engine.moveWall(wall.id, wall.start, wall.end);
           } catch (err) {
-            console.error('Failed to commit wall handle move', err);
+            this.project = this.engine.getSnapshot(); reportEditorError(err);
           }
         }
       }
@@ -405,8 +423,8 @@ export class Canvas2D {
 
   private hitTest(world: Point, sx: number, sy: number): SelectedEntity | null {
     // 1. Objects
-    for (let i = this.project.interior.objects.length - 1; i >= 0; i--) {
-      const obj = this.project.interior.objects[i];
+    for (let i = this.objects.length - 1; i >= 0; i--) {
+      const obj = this.objects[i];
       const footprint = getFurnitureFootprint(obj);
       const hw = footprint.width / 2;
       const hd = footprint.depth / 2;
@@ -425,7 +443,7 @@ export class Canvas2D {
     }
 
     // 2. Walls (line segment distance)
-    for (const wall of this.project.building.walls) {
+    for (const wall of this.walls) {
       const dist = distanceToSegment(world, wall.start, wall.end);
       if (dist <= (wall.thickness / 2) + 0.15) {
         return { type: 'wall', id: wall.id };
@@ -433,7 +451,7 @@ export class Canvas2D {
     }
 
     // 3. Rooms (polygon test)
-    for (const room of this.project.building.rooms) {
+    for (const room of this.rooms) {
       const poly = roomPolygon(this.project, room);
       if (pointInPolygon(world, poly)) {
         return { type: 'room', id: room.id };
@@ -449,7 +467,7 @@ export class Canvas2D {
     const cos = Math.cos(obj.rotation.y);
     const sin = Math.sin(obj.rotation.y);
     const worldHandle = {
-      x: obj.position.x - sin * stalkDist,
+      x: obj.position.x + sin * stalkDist,
       z: obj.position.z + cos * stalkDist,
     };
     return this.worldToScreen(worldHandle);
@@ -457,8 +475,8 @@ export class Canvas2D {
 
   public render() {
     const { ctx, canvas } = this;
-    const w = canvas.width / (window.devicePixelRatio || 1);
-    const h = canvas.height / (window.devicePixelRatio || 1);
+    const w = canvas.width / this.dpr;
+    const h = canvas.height / this.dpr;
 
     // Void background
     ctx.clearRect(0, 0, w, h);
@@ -557,7 +575,7 @@ export class Canvas2D {
 
   private drawRooms() {
     const { ctx } = this;
-    for (const room of this.project.building.rooms) {
+    for (const room of this.rooms) {
       const poly = roomPolygon(this.project, room);
       if (poly.length < 3) continue;
 
@@ -576,8 +594,9 @@ export class Canvas2D {
         ? 'rgba(168, 232, 210, 0.12)'
         : isHovered
         ? 'rgba(255, 255, 255, 0.05)'
-        : 'rgba(28, 38, 33, 0.4)';
-      ctx.fill();
+        : (this.project.materials.find(m => m.id === room.materials?.floor)?.color ?? '#1c2621');
+      ctx.globalAlpha = isSelected || isHovered ? 1 : .22;
+      ctx.fill(); ctx.globalAlpha = 1;
 
       // Room tag in center
       const xs = poly.map(v => v.x), zs = poly.map(v => v.z);
@@ -605,7 +624,7 @@ export class Canvas2D {
   private drawWallsAndOpenings() {
     const { ctx } = this;
 
-    for (const wall of this.project.building.walls) {
+    for (const wall of this.walls) {
       const isSelected = this.selected?.type === 'wall' && this.selected.id === wall.id;
       const isHovered = this.hovered?.type === 'wall' && this.hovered.id === wall.id;
 
@@ -670,7 +689,7 @@ export class Canvas2D {
   }
 
   private drawObjects() {
-    for (const obj of this.project.interior.objects) {
+    for (const obj of this.objects) {
       const isSelected = this.selected?.type === 'object' && this.selected.id === obj.id;
       drawFurniture2D(this.ctx, obj, isSelected);
     }

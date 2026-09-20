@@ -1,4 +1,5 @@
 import { CURRENT_VERSION, FORMAT, type MoppleDoor, type MoppleFloor, type MoppleInteriorObject, type MoppleLight, type MoppleMaterial, type MoppleProject, type MoppleRoom, type MoppleWall, type MoppleWindow, type Point, type Vector } from './schema.ts';
+import { createHouseDesign } from './house.ts';
 import { roomPolygon, samePoint } from './geometry.ts';
 import { type MoppleOperation, validateOperations } from './operations.ts';
 import { MoppleValidationError, parseProject, validateProject } from './validation.ts';
@@ -37,6 +38,14 @@ function moveVertices(p: MoppleProject, floorId: string, moves: { from: Point; t
 function apply(p: MoppleProject, op: MoppleOperation) {
   const b = p.building;
   switch (op.type) {
+    case 'rename_project': p.project.name = op.name; break;
+    case 'create_house': createHouseDesign(p, op); break;
+    case 'scale_object': find(p.interior.objects, op.targetId).scale = op.scale; break;
+    case 'remove_room':
+      find(b.rooms, op.targetId);
+      if (p.interior.objects.some(o => o.roomId === op.targetId)) reject(op.targetId, 'Remove or move this room’s furniture before deleting the room');
+      b.rooms = b.rooms.filter(r => r.id !== op.targetId);
+      break;
     case 'add_floor': b.floors.push(op.floor); break;
     case 'create_room': b.rooms.push(op.room); break;
     case 'update_room': Object.assign(find(b.rooms, op.targetId), op.changes); break;
@@ -93,6 +102,7 @@ export class MoppleProjectEngine {
   #listeners = new Set<Listener>();
   #notifying = false;
   #now: () => string;
+  #revision = 0;
   #onError: (error: unknown) => void;
 
   #undoStack: MoppleProject[] = [];
@@ -105,6 +115,7 @@ export class MoppleProjectEngine {
     this.#onError = options.onSubscriberError ?? (error => console.error('Mopple subscriber failed', error));
   }
   getSnapshot(): MoppleProject { return structuredClone(this.#project); }
+  get revision(): number { return this.#revision; }
   get canUndo(): boolean { return this.#undoStack.length > 0; }
   get canRedo(): boolean { return this.#redoStack.length > 0; }
   subscribe(listener: Listener): () => void {
@@ -126,54 +137,65 @@ export class MoppleProjectEngine {
       this.#undoStack.push(this.getSnapshot());
       if (this.#undoStack.length > 50) this.#undoStack.shift();
       this.#redoStack = [];
-      this.#notifyHistory();
     }
     this.#project = project;
+    this.#revision++;
     this.#notifying = true;
     try {
       for (const listener of [...this.#listeners]) {
         try { listener(this.getSnapshot()); }
         catch (error) { try { this.#onError(error); } catch { /* Error reporting cannot undo a committed transaction. */ } }
       }
+      this.#notifyHistory();
     } finally { this.#notifying = false; }
   }
+  #assertWritable() { if (this.#notifying) reject('engine', 'Cannot edit from a notification'); }
   undo(): boolean {
+    this.#assertWritable();
     if (this.#undoStack.length === 0) return false;
     const previous = this.#undoStack.pop()!;
     this.#redoStack.push(this.getSnapshot());
     this.#commit(previous, false);
-    this.#notifyHistory();
     return true;
   }
   redo(): boolean {
+    this.#assertWritable();
     if (this.#redoStack.length === 0) return false;
     const next = this.#redoStack.pop()!;
     this.#undoStack.push(this.getSnapshot());
     this.#commit(next, false);
-    this.#notifyHistory();
     return true;
   }
   clearHistory(): void {
+    this.#assertWritable();
     this.#undoStack = [];
     this.#redoStack = [];
-    this.#notifyHistory();
+    this.#notifying = true;
+    try { this.#notifyHistory(); } finally { this.#notifying = false; }
   }
   loadProject(input: unknown): void {
-    this.#commit(validateProject(input), false);
-    this.clearHistory();
+    this.#assertWritable();
+    const next = validateProject(input);
+    this.#undoStack = []; this.#redoStack = [];
+    this.#commit(next, false);
   }
   importProject(json: string): void {
     this.#commit(parseProject(json), true);
   }
   saveProject(): string { return JSON.stringify(this.#project, null, 2) + '\n'; }
   applyOperations(input: unknown): void {
+    this.#assertWritable();
     const { operations } = validateOperations(input);
     const next = this.getSnapshot();
     for (const operation of operations) apply(next, operation);
+    if (JSON.stringify(next) === JSON.stringify(this.#project)) return;
     const timestamp = this.#now();
     next.project.updatedAt = Date.parse(timestamp) < Date.parse(next.project.updatedAt) ? next.project.updatedAt : timestamp;
     this.#commit(validateProject(next));
   }
+  renameProject(name: string) { this.#run({ type: 'rename_project', name }); }
+  scaleInteriorObject(targetId: string, scale: Vector) { this.#run({ type: 'scale_object', targetId, scale }); }
+  removeRoom(targetId: string) { this.#run({ type: 'remove_room', targetId }); }
   #run(operation: MoppleOperation) { this.applyOperations({ operations: [operation] }); }
   addFloor(floor: MoppleFloor) { this.#run({ type: 'add_floor', floor }); }
   addRoom(room: MoppleRoom) { this.#run({ type: 'create_room', room }); }

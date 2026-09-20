@@ -1,3 +1,4 @@
+import { escapeHtml, labelControls, reportEditorError } from './ui.ts';
 import type { MoppleProjectEngine } from '../project/engine.ts';
 import type { MoppleInteriorObject, MoppleProject } from '../project/schema.ts';
 import type { SelectedEntity } from './canvas2d.ts';
@@ -19,6 +20,7 @@ export class LayersPanel {
   private onDeleteSelected: () => void;
   private filterQuery = '';
   private unsubscribe: () => void;
+  private events = new AbortController();
 
   constructor(container: HTMLElement, options: LayersPanelOptions) {
     this.container = container;
@@ -28,6 +30,7 @@ export class LayersPanel {
     this.onAddFurniture = options.onAddFurniture;
     this.onDeleteSelected = options.onDeleteSelected;
 
+    document.addEventListener('click', () => this.container.querySelector('#add-entity-menu')?.classList.remove('show'), { signal: this.events.signal });
     this.render();
 
     this.unsubscribe = this.engine.subscribe(p => {
@@ -37,7 +40,7 @@ export class LayersPanel {
   }
 
   public destroy() {
-    this.unsubscribe();
+    this.unsubscribe(); this.events.abort();
   }
 
   public setSelection(entity: SelectedEntity | null) {
@@ -74,7 +77,7 @@ export class LayersPanel {
 
       <div class="panel-search">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" id="layers-filter" placeholder="Filter layers..." value="${this.filterQuery}" />
+        <input type="text" id="layers-filter" placeholder="Filter layers..." value="${escapeHtml(this.filterQuery)}" />
       </div>
 
       <div class="layers-tree">
@@ -116,6 +119,7 @@ export class LayersPanel {
       </div>
     `;
 
+    labelControls(this.container);
     this.bindEvents();
   }
 
@@ -125,11 +129,11 @@ export class LayersPanel {
       .map(room => {
         const isSelected = this.selected?.type === 'room' && this.selected.id === room.id;
         return `
-          <div class="layer-item ${isSelected ? 'selected' : ''}" data-type="room" data-id="${room.id}">
+          <button type="button" class="layer-item ${isSelected ? 'selected' : ''}" data-type="room" data-id="${room.id}" aria-pressed="${isSelected}">
             <span class="layer-icon">⬚</span>
-            <span class="layer-label">${room.name}</span>
+            <span class="layer-label">${escapeHtml(room.name)}</span>
             <span class="layer-sub">${room.type}</span>
-          </div>
+          </button>
         `;
       }).join('');
   }
@@ -152,11 +156,11 @@ export class LayersPanel {
         const isSelected = this.selected?.type === 'object' && this.selected.id === obj.id;
         const icon = icons[obj.kind] || '📦';
         return `
-          <div class="layer-item ${isSelected ? 'selected' : ''}" data-type="object" data-id="${obj.id}">
+          <button type="button" class="layer-item ${isSelected ? 'selected' : ''}" data-type="object" data-id="${obj.id}" aria-pressed="${isSelected}">
             <span class="layer-icon">${icon}</span>
             <span class="layer-label">${obj.assetId || obj.kind}</span>
             <span class="layer-sub">${obj.roomId ? obj.roomId.replace('room_', '') : ''}</span>
-          </div>
+          </button>
         `;
       }).join('');
   }
@@ -167,11 +171,11 @@ export class LayersPanel {
       .map(wall => {
         const isSelected = this.selected?.type === 'wall' && this.selected.id === wall.id;
         return `
-          <div class="layer-item ${isSelected ? 'selected' : ''}" data-type="wall" data-id="${wall.id}">
+          <button type="button" class="layer-item ${isSelected ? 'selected' : ''}" data-type="wall" data-id="${wall.id}" aria-pressed="${isSelected}">
             <span class="layer-icon">━</span>
             <span class="layer-label">${wall.id}</span>
             <span class="layer-sub">${wall.height}m</span>
-          </div>
+          </button>
         `;
       }).join('');
   }
@@ -200,7 +204,7 @@ export class LayersPanel {
         e.stopPropagation();
         menu.classList.toggle('show');
       });
-      document.addEventListener('click', () => menu.classList.remove('show'), { once: true });
+
     }
 
     // Add item buttons
@@ -209,7 +213,7 @@ export class LayersPanel {
         e.stopPropagation();
         const kind = (btn as HTMLElement).dataset.add as MoppleInteriorObject['kind'];
         if (kind) {
-          this.onAddFurniture(kind);
+          try { this.onAddFurniture(kind); } catch (error) { reportEditorError(error); }
           if (menu) menu.classList.remove('show');
         }
       });

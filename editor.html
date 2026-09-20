@@ -15,13 +15,13 @@
           <img src="/mopple-logo.png" alt="Mopple" height="20" style="object-fit: contain;" />
         </a>
         <span class="brand-badge">STUDIO</span>
-        <input type="text" id="project-title" class="project-title-input" value="Modern House" title="Click to rename project" />
+        <input aria-label="Project name" maxlength="200" type="text" id="project-title" class="project-title-input" value="Modern House" title="Click to rename project" />
       </div>
 
-      <div class="view-switcher" role="tablist">
-        <button class="view-tab" data-view="2d" role="tab" title="Architecture Plan (Shortcut: 1)">2D Plan</button>
-        <button class="view-tab active" data-view="split" role="tab" title="Dual Synchronized View (Shortcut: 2)">Split View</button>
-        <button class="view-tab" data-view="3d" role="tab" title="3D Realistic View (Shortcut: 3)">3D Scene</button>
+      <div class="view-switcher" role="tablist" aria-label="Design view">
+        <button class="view-tab" id="tab-2d" data-view="2d" role="tab" aria-controls="pane-2d" title="Architecture Plan (Shortcut: 1)">2D Plan</button>
+        <button class="view-tab active" id="tab-split" data-view="split" role="tab" aria-controls="pane-2d pane-3d" title="Dual Synchronized View (Shortcut: 2)">Split View</button>
+        <button class="view-tab" id="tab-3d" data-view="3d" role="tab" aria-controls="pane-3d" title="3D Realistic View (Shortcut: 3)">3D Scene</button>
       </div>
 
       <div class="nav-actions">
@@ -51,15 +51,20 @@
       </div>
     </header>
 
+    <div class="workspace-tools">
+      <button type="button" class="btn btn-secondary panel-toggle" data-panel="layers-container" aria-controls="layers-container" aria-expanded="false">Layers</button>
+      <label for="floor-picker">Plan floor</label><select id="floor-picker" class="input-select"></select>
+      <button type="button" class="btn btn-secondary panel-toggle" data-panel="properties-container" aria-controls="properties-container" aria-expanded="false">Properties</button>
+    </div>
     <!-- Main Workspace -->
     <main class="editor-workspace">
       <!-- Left Sidebar: Layers & Hierarchy -->
-      <aside class="panel-sidebar" id="layers-container"></aside>
+      <aside class="panel-sidebar" id="layers-container" aria-label="Layers"></aside>
 
       <!-- Center Viewport Area -->
       <div class="viewport-container">
-        <div class="canvas-pane split-left" id="pane-2d"></div>
-        <div class="canvas-pane" id="pane-3d"></div>
+        <div class="canvas-pane split-left" id="pane-2d" role="tabpanel" aria-label="2D floor plan"></div>
+        <div class="canvas-pane" id="pane-3d" role="tabpanel" aria-label="3D scene"></div>
 
         <!-- Viewport HUD Overlay Controls -->
         <div class="viewport-hud">
@@ -99,7 +104,7 @@
             <div class="ai-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
             </div>
-            <input type="text" id="ai-prompt-input" class="ai-prompt-input" placeholder="Ask AI: 'expand bedroom by 1m', 'replace sofa with table', 'change floor to marble'..." />
+            <input type="text" aria-label="Describe a house or a design change" id="ai-prompt-input" class="ai-prompt-input" placeholder="Create a 150m² house with 3 bedrooms, or describe a change…" />
             <button class="btn btn-primary" id="btn-ai-submit">Generate</button>
           </div>
           <div class="ai-status" id="ai-status" role="alert" aria-live="polite"></div>
@@ -107,14 +112,14 @@
       </div>
 
       <!-- Right Sidebar: Properties Inspector -->
-      <aside class="panel-properties" id="properties-container"></aside>
+      <aside class="panel-properties" id="properties-container" aria-label="Properties"></aside>
     </main>
   </div>
 
   <!-- API Key Modal -->
   <div class="modal-backdrop" id="modal-apikey">
-    <div class="modal-card">
-      <div class="modal-title">NVIDIA NIM AI Configuration</div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="ai-settings-title">
+      <div class="modal-title" id="ai-settings-title">NVIDIA NIM AI Configuration</div>
       <div class="modal-desc">
         Connect NVIDIA NIM with your API key from <a href="https://build.nvidia.com" target="_blank" rel="noopener" style="color: var(--mint); text-decoration: underline;">build.nvidia.com</a> to power Mopple Studio with <strong>GLM 5.3 Flash</strong>. If omitted, Mopple's local semantic rule engine executes common design requests instantly offline.
       </div>
@@ -130,7 +135,7 @@
       <div class="prop-group">
         <div class="prop-label">NVIDIA NIM API Key</div>
         <input type="password" id="apikey-input" class="input-text" placeholder="nvapi-xxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
-        <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Get your personal key starting with <code>nvapi-</code> from build.nvidia.com</div>
+        <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Your key is kept in memory until this tab reloads. Use a personal <code>nvapi-</code> key; project data is sent to NVIDIA when you submit a request.</div>
       </div>
       <div class="modal-actions">
         <button class="btn btn-secondary" id="btn-close-apikey">Cancel</button>

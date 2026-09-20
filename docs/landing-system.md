@@ -2,7 +2,7 @@
 
 ## Overview
 
-This is an implementation supplement to the preserved [design.md](../design.md), not a replacement design reference. [PRODUCT.md](../PRODUCT.md) defines the scope: a landing page and one demonstration house, with no editor, authentication, AI service, or backend. The reference supplies the black canvas, generous spacing, asymmetric geometry, and light typography. The explicit Mopple brief replaces Dala violet and particles with mint and a transforming house.
+This is an implementation supplement to the preserved [design.md](../design.md), not a replacement design reference. [PRODUCT.md](../PRODUCT.md) defines the current product scope. This document covers only the landing page and its demonstration; the separate Studio editor and AI service are documented in [editor-system.md](editor-system.md). The reference supplies the black canvas, generous spacing, asymmetric geometry, and light typography. The explicit Mopple brief replaces Dala violet and particles with mint and a transforming house.
 
 Source of truth: [styles.css](../src/styles.css), [index.html](../index.html), and [scene](../src/scene/). The header/footer use the official `mopple-logo.png`, with its built-in margins framed by CSS. The original background and artwork are retained. `mopple-icon.png` supplies the tab favicon; Vite bundles both assets.
 
@@ -53,7 +53,7 @@ Primary buttons have a 24px radius and 14px × 22px padding. Stage controls are 
 
 ## Components
 
-**Navigation and actions.** Navigation uses local anchors. The primary “Design your first home” CTA links to `#start`, whose copy explicitly says the tools are coming soon; its next action opens the demonstration. Capability links select the corresponding view. This is a demo funnel, not an implemented home-design workflow.
+**Navigation and actions.** Navigation uses local anchors. The primary “Design your first home” CTA links to `#start`, whose copy explicitly says the tools are coming soon; its next action opens the demonstration. Capability links select the corresponding view. The landing also links to the separate Studio editor; the demonstration remains a promotional scene.
 
 **Interaction feedback.** On fine pointers, buttons brighten and rise 2px; active buttons scale to `.98`. Background transitions take 180ms; transforms take 160ms with `--ease-out: cubic-bezier(.23,1,.32,1)`. Focus-visible outlines are 2px mint with a 7px offset. A skip link precedes the header.
 

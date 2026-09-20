@@ -13,101 +13,68 @@ export interface AIExecutionResult {
 }
 
 export const DEFAULT_AI_MODEL = 'z-ai/glm-5.3-flash';
-export const DEFAULT_GEMINI_MODEL = DEFAULT_AI_MODEL; // Backward compatibility alias
-const NIM_API_KEY_STORAGE = 'mopple_nim_api_key';
-const LEGACY_GEMINI_KEY_STORAGE = 'mopple_gemini_api_key';
-const AI_MODEL_STORAGE = 'mopple_ai_model';
-const LEGACY_MODEL_STORAGE = 'mopple_gemini_model';
-
+export const DEFAULT_GEMINI_MODEL = DEFAULT_AI_MODEL;
+let tabApiKey = '';
+let migratedKey = false;
 export function getStoredApiKey(): string {
-  return localStorage.getItem(NIM_API_KEY_STORAGE) || localStorage.getItem(LEGACY_GEMINI_KEY_STORAGE) || '';
-}
-
-export function setStoredApiKey(key: string): void {
-  if (!key) {
-    localStorage.removeItem(NIM_API_KEY_STORAGE);
-    localStorage.removeItem(LEGACY_GEMINI_KEY_STORAGE);
-  } else {
-    localStorage.setItem(NIM_API_KEY_STORAGE, key.trim());
-  }
-}
-
-export function getStoredModel(): string {
-  const stored = localStorage.getItem(AI_MODEL_STORAGE) || localStorage.getItem(LEGACY_MODEL_STORAGE);
-  if (!stored || stored.includes('gemini')) {
-    return DEFAULT_AI_MODEL;
-  }
-  return stored;
-}
-
-export function setStoredModel(model: string): void {
-  if (!model) {
-    localStorage.removeItem(AI_MODEL_STORAGE);
-    localStorage.removeItem(LEGACY_MODEL_STORAGE);
-  } else {
-    localStorage.setItem(AI_MODEL_STORAGE, model.trim());
-  }
-}
-
-/**
- * Executes a natural language request against the project engine.
- */
-export async function executeAiPrompt(
-  prompt: string,
-  engine: MoppleProjectEngine,
-  selectedId?: string
-): Promise<AIExecutionResult> {
-  const cleanPrompt = prompt.trim();
-  if (!cleanPrompt) {
-    throw new Error('Prompt cannot be empty');
-  }
-
-  const apiKey = getStoredApiKey();
-  const requestedModel = getStoredModel();
-  let nimError: string | null = null;
-
-  // If API key is provided, attempt NVIDIA NIM API call first
-  if (apiKey) {
+  if (!migratedKey) {
+    migratedKey = true;
     try {
-      const result = await callNvidiaNimApi(cleanPrompt, engine.getSnapshot(), apiKey, selectedId, requestedModel);
-      if (result && result.operations && result.operations.operations.length > 0) {
-        engine.applyOperations(result.operations);
-        const isGlm = result.modelUsed.includes('glm');
-        return {
-          success: true,
-          message: `Executed ${result.operations.operations.length} operation(s) via ${isGlm ? 'GLM 5.3 Flash' : result.modelUsed} (NVIDIA NIM)`,
-          operationsCount: result.operations.operations.length,
-          source: 'nvidia_nim',
-          model: result.modelUsed,
-        };
-      }
-    } catch (err: any) {
-      console.warn('NVIDIA NIM API call failed:', err);
-      nimError = err?.message || 'Unknown NVIDIA NIM API error';
-    }
+      tabApiKey = localStorage.getItem('mopple_nim_api_key') || '';
+      localStorage.removeItem('mopple_nim_api_key');
+      localStorage.removeItem('mopple_gemini_api_key');
+    } catch { /* Storage may be unavailable. */ }
   }
-
-  // Local semantic natural language interpreter
-  const operations = interpretPromptLocally(cleanPrompt, engine.getSnapshot(), selectedId);
-  if (!operations || operations.length === 0) {
-    if (nimError) {
-      throw new Error(`NVIDIA NIM (GLM 5.3 Flash) Error: ${nimError}`);
-    }
-    throw new Error(`Could not determine operations for: "${cleanPrompt}". Try asking to resize a room, add or replace furniture, change materials, or update lighting.`);
-  }
-
-  const validated = validateOperations({ operations });
-  engine.applyOperations(validated);
-
-  return {
-    success: true,
-    message: nimError
-      ? `Applied ${validated.operations.length} change(s) via local engine (Note: NVIDIA NIM error: ${nimError})`
-      : `Applied ${validated.operations.length} change(s) seamlessly`,
-    operationsCount: validated.operations.length,
-    source: 'local_semantic',
-  };
+  return tabApiKey;
 }
+export function setStoredApiKey(key: string): void { getStoredApiKey(); tabApiKey = key.trim(); }
+export function getStoredModel(): string {
+  try { const m = localStorage.getItem('mopple_ai_model'); return m && !m.includes('gemini') ? m : DEFAULT_AI_MODEL; }
+  catch { return DEFAULT_AI_MODEL; }
+}
+export function setStoredModel(model: string): void {
+  try { localStorage.setItem('mopple_ai_model', model.trim()); } catch { /* Optional preference. */ }
+}
+const busyEngines = new WeakSet<MoppleProjectEngine>();
+export async function executeAiPrompt(prompt: string, engine: MoppleProjectEngine, selectedId?: string): Promise<AIExecutionResult> {
+  const text = prompt.trim();
+  if (!text) throw new Error('Enter a design request first.');
+  if (busyEngines.has(engine)) throw new Error('A request is already running. Wait for it to finish.');
+  busyEngines.add(engine);
+  try {
+    const apiKey = getStoredApiKey(), model = getStoredModel(), revision = engine.revision;
+    const project = engine.getSnapshot();
+    let operations: MoppleOperations;
+    if (apiKey) {
+      let response: Response;
+      try {
+        response = await fetch('/api/ai/operations', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({ prompt: text, project, selectedId, model }), signal: AbortSignal.timeout(95000),
+        });
+      } catch (error) {
+        if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) throw new Error('AI timed out. Your design is unchanged. Try a smaller request.');
+        throw new Error('Cannot reach the AI service. Check your connection and run Mopple with its server. Your design is unchanged.');
+      }
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        const detail = body && typeof body === 'object' && 'error' in body && typeof body.error === 'string' ? body.error : 'AI endpoint unavailable. Start Mopple with npm run dev or npm start.';
+        throw new Error(detail);
+      }
+      operations = sanitizeOperations(body, project);
+    } else {
+      const interpreted = interpretPromptLocally(text, project, selectedId);
+      if (!interpreted.length) throw new Error('Offline commands support creating a house, resizing a room, moving/adding furniture, materials and lighting. Rephrase the request or connect NVIDIA NIM.');
+      operations = validateOperations({ operations: interpreted });
+    }
+    if (engine.revision !== revision) throw new Error('The project changed while AI was working. Nothing was applied; submit again using the current design.');
+    if (operations.operations.some(o => o.type === 'create_house') && !isHouseRequest(text)) throw new Error('AI proposed replacing your house for an ordinary edit. Nothing was applied; rephrase the request.');
+    engine.applyOperations(operations);
+    return { success: true, message: `Applied ${operations.operations.length} operation(s)${apiKey ? ` via ${model}` : ' offline'}. Undo is available.`, operationsCount: operations.operations.length, source: apiKey ? 'nvidia_nim' : 'local_semantic', model: apiKey ? model : undefined };
+  } finally { busyEngines.delete(engine); }
+}
+export function isHouseRequest(text: string): boolean { return /\b(create|generate|build|design)\b.*\b(house|home|apartment|villa)\b/i.test(text); }
+const freshId = (prefix: string) => `${prefix}_${globalThis.crypto.randomUUID()}`;
 
 /**
  * Intelligent local semantic parser that matches common design requests.
@@ -122,28 +89,46 @@ export function interpretPromptLocally(
   const rooms = project.building.rooms;
   const objects = project.interior.objects;
 
-  // Helper to find target room from text or selection
+  if (isHouseRequest(p)) {
+    const number = (pattern: RegExp, fallback: number) => { const m = p.match(pattern); return m ? (countMap[m[1]] ?? Number(m[1])) : fallback; };
+    if (/\b(?:[2-9]|two|three|four|five)\s*[- ]?(?:floors?|stor(?:ey|y|ies))\b/.test(p)) throw new Error('The offline house generator supports one floor. Use connected AI for a multi-floor design.');
+    return [{ type: 'create_house', area: number(/(\d+(?:\.\d+)?)\s*(?:m²|m2|square meters?|sqm)/, 150), bedrooms: number(/(one|two|three|four|five|six|\d+)\s*bedrooms?/, 3), bathrooms: number(/(one|two|three|four|five|six|\d+)\s*bathrooms?/, 2), style: /minimal/.test(p) ? 'minimal' : 'modern' }];
+  }
   function findTargetRoom(): MoppleRoom | undefined {
-    if (selectedId) {
-      const room = rooms.find(r => r.id === selectedId);
-      if (room) return room;
-      const obj = objects.find(o => o.id === selectedId);
-      if (obj) {
-        const parentRoom = rooms.find(r => r.id === obj.roomId);
-        if (parentRoom) return parentRoom;
-      }
+    const exact = rooms.filter(r => p.includes(r.name.toLowerCase()));
+    if (exact.length === 1) return exact[0];
+    const names: [RegExp, MoppleRoom['type']][] = [[/\bbedroom\b/, 'bedroom'], [/\bkitchen\b/, 'kitchen'], [/\bliving(?: room)?\b/, 'living_room'], [/\bbath(?:room)?\b/, 'bathroom'], [/\boffice\b/, 'office'], [/\bdining room\b/, 'dining_room']];
+    for (const [pattern, type] of names) if (pattern.test(p)) {
+      const matches = rooms.filter(r => r.type === type);
+      const selected = matches.find(r => r.id === selectedId || objects.some(o => o.id === selectedId && o.roomId === r.id));
+      if (selected) return selected;
+      if (matches.length !== 1) throw new Error(`Name or select the specific ${type.replaceAll('_', ' ')} to edit.`);
+      return matches[0];
     }
-    if (p.includes('bedroom')) return rooms.find(r => r.type === 'bedroom' || r.name.toLowerCase().includes('bedroom'));
-    if (p.includes('kitchen')) return rooms.find(r => r.type === 'kitchen' || r.name.toLowerCase().includes('kitchen'));
-    if (p.includes('living')) return rooms.find(r => r.type === 'living_room' || r.name.toLowerCase().includes('living'));
-    if (p.includes('bath')) return rooms.find(r => r.type === 'bathroom' || r.name.toLowerCase().includes('bath'));
-    if (p.includes('office')) return rooms.find(r => r.type === 'office' || r.name.toLowerCase().includes('office'));
-    if (p.includes('dining')) return rooms.find(r => r.type === 'dining_room' || r.name.toLowerCase().includes('dining'));
-    return rooms[0];
+    return rooms.find(r => r.id === selectedId || objects.some(o => o.id === selectedId && o.roomId === r.id)) ?? rooms[0];
+  }
+  function findObject(kind: MoppleInteriorObject['kind'] | null) {
+    const selected = objects.find(o => o.id === selectedId && (!kind || o.kind === kind));
+    if (selected) return selected;
+    let candidates = objects.filter(o => !kind || o.kind === kind);
+    if (/\b(bedroom|kitchen|living|bathroom|office|dining room)\b/.test(p)) candidates = candidates.filter(o => o.roomId === findTargetRoom()?.id);
+    if (candidates.length !== 1) throw new Error('Select the furniture item to change, then submit again.');
+    return candidates[0];
+  }
+  if (/\bmove\b/.test(p)) {
+    const obj = findObject(findMentionedFurnitureKind(p));
+    const amount = Number(p.match(/(\d+(?:\.\d+)?)\s*(?:m|meters?)\b/)?.[1] ?? 1);
+    const position = { ...obj.position };
+    if (/\bleft\b/.test(p)) position.x -= amount;
+    else if (/\bright\b/.test(p)) position.x += amount;
+    else if (/\b(forward|north|up)\b/.test(p)) position.z -= amount;
+    else if (/\b(back|backward|south|down)\b/.test(p)) position.z += amount;
+    else throw new Error('Specify a direction and distance, for example “move the sofa 1m left”.');
+    return [{ type: 'move_object', targetId: obj.id, position }];
   }
 
   // 1. LIGHTING & COZY / ATMOSPHERE REVISIONS
-  if (p.includes('lighting') || p.includes('sunset') || p.includes('evening') || p.includes('night') || p.includes('daylight') || p.includes('mood') || p.includes('cozy') || p.includes('warm') || p.includes('hygge') || p.includes('bright')) {
+  if (!/\b(add|place|insert|move|replace|swap|remove|delete|rotate)\b/.test(p) && (p.includes('lighting') || p.includes('sunset') || p.includes('evening') || p.includes('night') || p.includes('daylight') || p.includes('mood') || p.includes('cozy') || p.includes('warm') || p.includes('hygge') || p.includes('bright'))) {
     if (p.includes('evening') || p.includes('sunset') || p.includes('warm') || p.includes('cozy') || p.includes('hygge')) {
       const lights: MoppleLight[] = [
         { id: 'light_ambient', type: 'ambient', color: '#ffb370', intensity: 0.85 },
@@ -179,6 +164,14 @@ export function interpretPromptLocally(
     return [{ type: 'update_lighting', lights }];
   }
 
+  const resizing = /\b(larger|bigger|expand|enlarge|smaller|shrink)\b/.test(p);
+  const furnitureKind = findMentionedFurnitureKind(p);
+  if (resizing && (furnitureKind || objects.some(o => o.id === selectedId)) && !/\b(room|bedroom|kitchen|bathroom)\b/.test(p)) {
+    const object = findObject(furnitureKind);
+    const shrink = /\b(smaller|shrink)\b/.test(p);
+    const factor = 1 + (shrink ? -1 : 1) * Number(p.match(/(\d+(?:\.\d+)?)\s*%/)?.[1] ?? 20) / 100;
+    return [{ type: 'scale_object', targetId: object.id, scale: { x: object.scale.x * factor, y: object.scale.y * factor, z: object.scale.z * factor } }];
+  }
   // 2. ROOM RESIZING / EXPANDING
   if (p.includes('larger') || p.includes('bigger') || p.includes('expand') || p.includes('enlarge') || p.includes('smaller') || p.includes('shrink')) {
     const room = findTargetRoom();
@@ -204,9 +197,11 @@ export function interpretPromptLocally(
   }
 
   // 3. MATERIAL & COLOR CHANGES
-  if (p.includes('floor') || p.includes('flooring') || p.includes('wood') || p.includes('oak') || p.includes('marble') || p.includes('tile') || p.includes('plaster') || p.includes('wall') || p.includes('paint') || p.includes('color') || p.includes('blue') || p.includes('white') || p.includes('green') || p.includes('black') || p.includes('grey') || p.includes('gray')) {
+  if (!/\b(add|place|insert|replace|swap|rotate|turn|remove|delete)\b/.test(p) && (p.includes('floor') || p.includes('flooring') || p.includes('wood') || p.includes('oak') || p.includes('marble') || p.includes('tile') || p.includes('plaster') || p.includes('wall') || p.includes('paint') || p.includes('color') || p.includes('blue') || p.includes('white') || p.includes('green') || p.includes('black') || p.includes('grey') || p.includes('gray'))) {
+    if (findMentionedFurnitureKind(p)) throw new Error('Offline finishes edit rooms, not furniture. Name the room’s floor or walls, or connect NVIDIA NIM.');
     const room = findTargetRoom() || rooms[0];
-    let matId = 'mat_custom_' + Date.now().toString(36).slice(-4);
+    if (!room) throw new Error('Create a room before applying finishes.');
+    let matId = freshId('mat');
     let newMat: MoppleMaterial | null = null;
     const isWall = p.includes('wall') || p.includes('paint') || p.includes('blue') || p.includes('green') || p.includes('black');
 
@@ -253,6 +248,7 @@ export function interpretPromptLocally(
           },
         });
       }
+      if (room && isWall) for (const edge of room.boundary) ops.push({ type: 'update_wall', targetId: edge.wallId, changes: { materialId: matId } });
       return ops;
     }
   }
@@ -262,13 +258,13 @@ export function interpretPromptLocally(
   if (replaceMatch) {
     const oldKind = findMentionedFurnitureKind(replaceMatch[1]) || normalizeFurnitureKind(replaceMatch[1]);
     const newKind = findMentionedFurnitureKind(replaceMatch[2]) || normalizeFurnitureKind(replaceMatch[2]);
-    const targetObj = objects.find(o => (oldKind && o.kind === oldKind) || (oldKind && o.assetId.toLowerCase().includes(oldKind)));
+    const targetObj = findObject(oldKind);
     if (targetObj && newKind) {
       ops.push({ type: 'remove_object', targetId: targetObj.id });
       ops.push({
         type: 'add_object',
         object: {
-          id: `object_${newKind}_${Date.now().toString(36).slice(-4)}`,
+          id: freshId(`object_${newKind}`),
           assetId: `${newKind}_modern`,
           kind: newKind,
           roomId: targetObj.roomId,
@@ -284,16 +280,14 @@ export function interpretPromptLocally(
   // 5. ROTATE / TURN FURNITURE
   if (p.includes('rotate') || p.includes('turn')) {
     const matchKind = findMentionedFurnitureKind(p);
-    const targetObj = matchKind
-      ? objects.find(o => o.kind === matchKind)
-      : (selectedId ? objects.find(o => o.id === selectedId) : objects[0]);
+    const targetObj = findObject(matchKind);
     if (targetObj) {
       const curRotY = targetObj.rotation?.y || 0;
       return [{
         type: 'move_object',
         targetId: targetObj.id,
         position: { ...targetObj.position },
-        rotation: { x: 0, y: curRotY + Math.PI / 2, z: 0 },
+        rotation: { x: 0, y: curRotY + Number(p.match(/(\d+(?:\.\d+)?)\s*(?:degrees?|°)/)?.[1] ?? 90) * Math.PI / 180, z: 0 },
       }];
     }
   }
@@ -302,7 +296,7 @@ export function interpretPromptLocally(
   if (/\b(?:remove|delete|clear)\b/i.test(p)) {
     const matchKind = findMentionedFurnitureKind(p);
     if (matchKind) {
-      const targetObj = objects.find(o => o.kind === matchKind);
+      const targetObj = findObject(matchKind);
       if (targetObj) {
         return [{ type: 'remove_object', targetId: targetObj.id }];
       }
@@ -311,9 +305,10 @@ export function interpretPromptLocally(
 
   // 7. ADD FURNITURE (with count support, e.g. "add 2 chairs")
   const matchKind = findMentionedFurnitureKind(p);
-  if (matchKind && !/\b(?:remove|delete|clear)\b/i.test(p)) {
+  if (matchKind && /\b(?:add|place|insert)\b/i.test(p)) {
     const room = findTargetRoom() || rooms[0];
-    const poly = room ? roomPolygon(project, room) : [];
+    if (!room) throw new Error('Create a house or room before adding furniture.');
+    const poly = roomPolygon(project, room);
     let baseX = 0, baseZ = 0;
     if (poly.length > 0) {
       const xs = poly.map(v => v.x), zs = poly.map(v => v.z);
@@ -323,16 +318,16 @@ export function interpretPromptLocally(
 
     const count = parseCount(p);
     for (let i = 0; i < count; i++) {
-      const offsetX = (i - (count - 1) / 2) * 0.7 + (Math.random() - 0.5) * 0.2;
-      const offsetZ = (Math.random() - 0.5) * 0.4;
+      const offsetX = (i - (count - 1) / 2) * 0.7;
+      const offsetZ = 0;
       ops.push({
         type: 'add_object',
         object: {
-          id: `object_${matchKind}_${Date.now().toString(36).slice(-4)}_${i}`,
+          id: freshId(`object_${matchKind}`),
           assetId: `${matchKind}_custom`,
           kind: matchKind,
-          roomId: room ? room.id : rooms[0].id,
-          position: { x: Math.round((baseX + offsetX) * 10) / 10, y: 0, z: Math.round((baseZ + offsetZ) * 10) / 10 },
+          roomId: room.id,
+          position: { x: Math.round((baseX + offsetX) * 10) / 10, y: project.building.floors.find(f => f.id === room.floorId)!.elevation, z: Math.round((baseZ + offsetZ) * 10) / 10 },
           rotation: { x: 0, y: 0, z: 0 },
           scale: { x: 1, y: 1, z: 1 },
         },
@@ -366,286 +361,19 @@ function parseCount(text: string): number {
   return Number.isFinite(num) && num > 0 && num <= 8 ? num : (countMap[m[1]] || 1);
 }
 
-function normalizeFurnitureKind(text: string): MoppleInteriorObject['kind'] | null {
-  const t = text.toLowerCase().trim();
-  if (t.includes('sofa') || t.includes('couch') || t.includes('sectional')) return 'sofa';
-  if (t.includes('bed')) return 'bed';
-  if (t.includes('table') || t.includes('desk')) return 'table';
-  if (t.includes('chair') || t.includes('armchair') || t.includes('stool')) return 'chair';
-  if (t.includes('cabinet') || t.includes('wardrobe') || t.includes('shelf') || t.includes('sideboard') || t.includes('cupboard') || t.includes('credenza')) return 'cabinet';
-  if (t.includes('lamp') || t.includes('light') || t.includes('chandelier')) return 'lamp';
-  if (t.includes('appliance') || t.includes('stove') || t.includes('fridge') || t.includes('sink') || t.includes('oven')) return 'appliance';
-  if (t.includes('plant') || t.includes('flower') || t.includes('tree') || t.includes('decor') || t.includes('rug') || t.includes('carpet') || t.includes('art')) return 'decoration';
-  return null;
-}
-
+function normalizeFurnitureKind(text: string): MoppleInteriorObject['kind'] | null { return findMentionedFurnitureKind(text); }
 function findMentionedFurnitureKind(text: string): MoppleInteriorObject['kind'] | null {
-  const t = text.toLowerCase();
-  const kinds: MoppleInteriorObject['kind'][] = ['sofa', 'bed', 'table', 'chair', 'cabinet', 'lamp', 'appliance', 'decoration'];
-  for (const kind of kinds) {
-    if (t.includes(kind)) return kind;
-  }
-  if (t.includes('plant') || t.includes('plants') || t.includes('flower') || t.includes('tree') || t.includes('rug') || t.includes('carpet')) return 'decoration';
-  if (t.includes('desk')) return 'table';
-  if (t.includes('couch') || t.includes('sectional')) return 'sofa';
-  if (t.includes('stove') || t.includes('sink') || t.includes('fridge') || t.includes('oven')) return 'appliance';
-  if (t.includes('stool') || t.includes('armchair') || t.includes('seat')) return 'chair';
-  if (t.includes('wardrobe') || t.includes('shelf') || t.includes('sideboard') || t.includes('credenza')) return 'cabinet';
-  return null;
+  const aliases: [MoppleInteriorObject['kind'], RegExp][] = [
+    ['sofa', /\b(sofas?|couches?|sectionals?)\b/i], ['bed', /\bbeds?\b/i],
+    ['table', /\b(tables?|desks?)\b/i], ['chair', /\b(chairs?|armchairs?|stools?)\b/i],
+    ['cabinet', /\b(cabinets?|wardrobes?|shelves|shelf|sideboards?)\b/i], ['lamp', /\b(lamps?|chandeliers?)\b/i],
+    ['appliance', /\b(appliances?|stoves?|fridges?|sinks?|ovens?)\b/i], ['decoration', /\b(decorations?|plants?|flowers?|trees?|rugs?|carpets?)\b/i],
+  ];
+  return aliases.find(([, regex]) => regex.test(text))?.[0] ?? null;
 }
 
-/**
- * Robust sanitizer that cleans and validates LLM API operations (NVIDIA NIM / GLM / Gemini) against Mopple Schema.
- */
-export function sanitizeOperations(raw: any, project: MoppleProject): MoppleOperations {
-  let list: any[] = [];
-  if (Array.isArray(raw)) {
-    list = raw;
-  } else if (raw && Array.isArray(raw.operations)) {
-    list = raw.operations;
-  } else if (raw && typeof raw === 'object') {
-    const arrayKey = Object.keys(raw).find(k => Array.isArray(raw[k]));
-    if (arrayKey) list = raw[arrayKey];
-  }
-
-  const cleanOps: MoppleOperation[] = [];
-  const rooms = project.building.rooms;
-  const objects = project.interior.objects;
-
-  for (const item of list) {
-    if (!item || typeof item !== 'object' || typeof item.type !== 'string') continue;
-
-    const type = item.type;
-
-    if (type === 'add_object') {
-      const o = item.object;
-      if (!o || typeof o !== 'object') continue;
-
-      const validKinds = ['sofa', 'bed', 'table', 'chair', 'cabinet', 'lamp', 'decoration', 'appliance'];
-      let kind = validKinds.includes(o.kind) ? o.kind : normalizeFurnitureKind(String(o.kind || 'sofa'));
-      if (!kind) kind = 'sofa';
-
-      let roomId = String(o.roomId || '');
-      if (!rooms.some(r => r.id === roomId)) {
-        const found = rooms.find(r => r.name.toLowerCase().includes(roomId.toLowerCase()) || r.type.includes(roomId.toLowerCase()));
-        roomId = found ? found.id : rooms[0].id;
-      }
-
-      const id = String(o.id || `object_${kind}_${Date.now().toString(36).slice(-4)}`).replace(/[^A-Za-z0-9_-]/g, '_').replace(/^[^A-Za-z]/, 'obj_$&');
-      const assetId = String(o.assetId || `${kind}_item`).replace(/[^A-Za-z0-9_-]/g, '_').replace(/^[^A-Za-z]/, 'asset_$&');
-
-      cleanOps.push({
-        type: 'add_object',
-        object: {
-          id,
-          assetId,
-          roomId,
-          kind,
-          position: {
-            x: Number(o.position?.x) || 0,
-            y: Number(o.position?.y) || 0,
-            z: Number(o.position?.z) || 0,
-          },
-          rotation: {
-            x: Number(o.rotation?.x) || 0,
-            y: Number(o.rotation?.y) || 0,
-            z: Number(o.rotation?.z) || 0,
-          },
-          scale: {
-            x: Math.max(0.1, Number(o.scale?.x) || 1),
-            y: Math.max(0.1, Number(o.scale?.y) || 1),
-            z: Math.max(0.1, Number(o.scale?.z) || 1),
-          },
-        },
-      });
-    } else if (type === 'resize_room') {
-      let targetId = String(item.targetId || '');
-      if (!rooms.some(r => r.id === targetId)) {
-        const found = rooms.find(r => r.name.toLowerCase().includes(targetId.toLowerCase()) || r.type.includes(targetId.toLowerCase()));
-        targetId = found ? found.id : rooms[0].id;
-      }
-      const width = Math.max(1, Number(item.width) || 4);
-      const depth = Math.max(1, Number(item.depth) || 4);
-      cleanOps.push({ type: 'resize_room', targetId, width, depth });
-    } else if (type === 'remove_object') {
-      let targetId = String(item.targetId || '');
-      if (!objects.some(o => o.id === targetId)) {
-        const found = objects.find(o => o.kind === targetId || o.assetId.toLowerCase().includes(targetId.toLowerCase()));
-        if (found) targetId = found.id;
-      }
-      if (objects.some(o => o.id === targetId)) {
-        cleanOps.push({ type: 'remove_object', targetId });
-      }
-    } else if (type === 'move_object') {
-      let targetId = String(item.targetId || '');
-      if (!objects.some(o => o.id === targetId)) {
-        const found = objects.find(o => o.kind === targetId || o.assetId.toLowerCase().includes(targetId.toLowerCase()));
-        if (found) targetId = found.id;
-      }
-      if (objects.some(o => o.id === targetId)) {
-        cleanOps.push({
-          type: 'move_object',
-          targetId,
-          position: {
-            x: Number(item.position?.x) || 0,
-            y: Number(item.position?.y) || 0,
-            z: Number(item.position?.z) || 0,
-          },
-          rotation: item.rotation ? {
-            x: Number(item.rotation.x) || 0,
-            y: Number(item.rotation.y) || 0,
-            z: Number(item.rotation.z) || 0,
-          } : undefined,
-          roomId: item.roomId && rooms.some(r => r.id === item.roomId) ? item.roomId : undefined,
-        });
-      }
-    } else if (type === 'change_material') {
-      const m = item.material;
-      if (m && typeof m === 'object') {
-        const id = String(m.id || 'mat_custom').replace(/[^A-Za-z0-9_-]/g, '_').replace(/^[^A-Za-z]/, 'mat_$&');
-        const validKinds = ['paint', 'wood', 'stone', 'glass', 'metal', 'flooring', 'fabric', 'custom'];
-        const kind = validKinds.includes(m.kind) ? m.kind : 'paint';
-        const color = typeof m.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(m.color) ? m.color : '#e0dbcf';
-        cleanOps.push({
-          type: 'change_material',
-          material: {
-            id,
-            name: String(m.name || 'Custom Material'),
-            kind,
-            color,
-            roughness: Math.max(0, Math.min(1, Number(m.roughness) ?? 0.8)),
-            metalness: Math.max(0, Math.min(1, Number(m.metalness) ?? 0.0)),
-            opacity: Math.max(0, Math.min(1, Number(m.opacity) ?? 1.0)),
-          },
-        });
-      }
-    } else if (type === 'update_room') {
-      let targetId = String(item.targetId || '');
-      if (!rooms.some(r => r.id === targetId)) {
-        const found = rooms.find(r => r.name.toLowerCase().includes(targetId.toLowerCase()) || r.type.includes(targetId.toLowerCase()));
-        targetId = found ? found.id : rooms[0].id;
-      }
-      cleanOps.push({
-        type: 'update_room',
-        targetId,
-        changes: item.changes || {},
-      });
-    } else if (type === 'change_room_style') {
-      let targetId = String(item.targetId || '');
-      if (!rooms.some(r => r.id === targetId)) {
-        const found = rooms.find(r => r.name.toLowerCase().includes(targetId.toLowerCase()) || r.type.includes(targetId.toLowerCase()));
-        targetId = found ? found.id : rooms[0].id;
-      }
-      cleanOps.push({
-        type: 'change_room_style',
-        targetId,
-        style: String(item.style || 'modern'),
-      });
-    } else if (type === 'update_lighting') {
-      if (Array.isArray(item.lights) && item.lights.length > 0) {
-        cleanOps.push({ type: 'update_lighting', lights: item.lights });
-      }
-    }
-  }
-
-  return validateOperations({ operations: cleanOps });
+/** Strict model boundary: never guess IDs, omit failed edits or coerce invalid dimensions. */
+export function sanitizeOperations(raw: unknown, _project: MoppleProject): MoppleOperations {
+  return validateOperations(raw);
 }
-
 export const sanitizeGeminiOperations = sanitizeOperations;
-
-/**
- * Direct NVIDIA NIM API integration supporting GLM 5.3 Flash (z-ai/glm-5.3-flash)
- */
-async function callNvidiaNimApi(
-  prompt: string,
-  project: MoppleProject,
-  apiKey: string,
-  selectedId?: string,
-  modelName = getStoredModel()
-): Promise<{ operations: MoppleOperations; modelUsed: string }> {
-  const systemInstruction = `You are Mopple AI, an architectural home design copilot powered by GLM 5.3 Flash on NVIDIA NIM.
-You receive a user design instruction and the current Mopple project JSON.
-You must return ONLY a valid JSON object matching:
-{
-  "operations": [ ...MoppleOperation ]
-}
-Valid operation types:
-- "resize_room": { "type": "resize_room", "targetId": "<room_id>", "width": <number>, "depth": <number> }
-- "add_object": { "type": "add_object", "object": { "id": "<id>", "assetId": "<string>", "kind": "sofa"|"bed"|"table"|"chair"|"cabinet"|"lamp"|"decoration"|"appliance", "roomId": "<room_id>", "position": {"x":0,"y":0,"z":0}, "rotation": {"x":0,"y":0,"z":0}, "scale": {"x":1,"y":1,"z":1} } }
-- "move_object": { "type": "move_object", "targetId": "<id>", "position": {"x":0,"y":0,"z":0}, "rotation": {"x":0,"y":0,"z":0} }
-- "remove_object": { "type": "remove_object", "targetId": "<id>" }
-- "change_material": { "type": "change_material", "material": { "id": "<id>", "name": "<name>", "kind": "paint"|"wood"|"stone"|"glass"|"metal"|"flooring"|"fabric"|"custom", "color": "#rrggbb", "roughness": 0..1, "metalness": 0..1, "opacity": 0..1 } }
-- "update_room": { "type": "update_room", "targetId": "<room_id>", "changes": { "materials": { "floor": "<mat_id>", "wall": "<mat_id>" } } }
-- "change_room_style": { "type": "change_room_style", "targetId": "<room_id>", "style": "<string>" }
-- "update_lighting": { "type": "update_lighting", "lights": [ ... ] }
-
-Selected entity ID (if any): ${selectedId ?? 'none'}.
-Return strictly pure JSON with NO markdown code fences or backticks.`;
-
-  const activeModel = modelName || DEFAULT_AI_MODEL;
-  const userContent = `User request: "${prompt}"\nCurrent Project Summary:\nRooms: ${JSON.stringify(project.building.rooms.map(r => ({ id: r.id, name: r.name, type: r.type })))}\nObjects: ${JSON.stringify(project.interior.objects.map(o => ({ id: o.id, kind: o.kind, roomId: o.roomId })))}`;
-
-  const body = {
-    model: activeModel,
-    messages: [
-      { role: 'system', content: systemInstruction },
-      { role: 'user', content: userContent },
-    ],
-    temperature: 0.2,
-    max_tokens: 2048,
-    response_format: { type: 'json_object' },
-  };
-
-  const endpoint = 'https://integrate.api.nvidia.com/v1/chat/completions';
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey.trim()}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    let errorDetail = errorText;
-    try {
-      const errObj = JSON.parse(errorText);
-      if (errObj.error?.message) errorDetail = errObj.error.message;
-    } catch {}
-
-    if (response.status === 401) {
-      throw new Error(`(401) Invalid or unauthorized NVIDIA NIM API key. Please check your nvapi- key from build.nvidia.com.`);
-    }
-    if (response.status === 403) {
-      throw new Error(`(403) Forbidden. Your NVIDIA NIM API key lacks permissions for model "${activeModel}".`);
-    }
-    if (response.status === 429) {
-      throw new Error(`(429) Rate limit reached on NVIDIA NIM. Please wait a moment and try again.`);
-    }
-    throw new Error(`(${response.status}) ${errorDetail}`);
-  }
-
-  const data = await response.json();
-  let text = data?.choices?.[0]?.message?.content;
-  if (!text) throw new Error('No response text received from NVIDIA NIM API');
-
-  // Strip <think>...</think> tags if reasoning tokens are emitted
-  text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-
-  const jsonStr = text.replace(/```json/gi, '').replace(/```/g, '').trim();
-  let parsed: any;
-  try {
-    parsed = JSON.parse(jsonStr);
-  } catch {
-    const start = jsonStr.indexOf('{') !== -1 ? jsonStr.indexOf('{') : jsonStr.indexOf('[');
-    const end = jsonStr.lastIndexOf('}') !== -1 ? jsonStr.lastIndexOf('}') : jsonStr.lastIndexOf(']');
-    if (start !== -1 && end > start) {
-      parsed = JSON.parse(jsonStr.substring(start, end + 1));
-    } else {
-      throw new Error('Could not parse valid JSON from NVIDIA NIM output');
-    }
-  }
-
-  return { operations: sanitizeOperations(parsed, project), modelUsed: activeModel };
-}

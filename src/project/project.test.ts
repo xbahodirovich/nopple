@@ -213,3 +213,32 @@ test('engine undo and redo accurately rewind and replay state and notify history
   assert.equal(e.canRedo, false);
   assert.equal(e.getSnapshot().building.walls.find(w => w.id === 'wall_center_n')!.start.x, 1.6);
 });
+
+test('reentrant undo/redo/clear and history callbacks cannot mutate history', () => {
+  const e = engine();
+  e.renameProject('First');
+  const stop = e.subscribe(() => {
+    assert.throws(() => e.undo(), MoppleValidationError);
+    assert.throws(() => e.redo(), MoppleValidationError);
+    assert.throws(() => e.clearHistory(), MoppleValidationError);
+  });
+  const stopHistory = e.subscribeHistory(() => {
+    assert.throws(() => e.renameProject('Nested'), MoppleValidationError);
+  });
+  e.renameProject('Second');
+  assert.equal(e.canRedo, false);
+  stop(); stopHistory();
+  e.undo(); assert.equal(e.getSnapshot().project.name, 'First');
+  e.undo(); assert.equal(e.getSnapshot().project.name, 'Modern House');
+});
+
+test('scale and rename are atomic, undoable and no-op changes create no revision', () => {
+  const e = engine();
+  e.renameProject('Modern House'); assert.equal(e.revision, 0); assert.equal(e.canUndo, false);
+  e.scaleInteriorObject('object_sofa', { x: 2, y: 1, z: 1 });
+  e.renameProject('Custom home');
+  e.undo(); assert.equal(e.getSnapshot().interior.objects[0].scale.x, 2);
+  e.undo(); assert.equal(e.getSnapshot().interior.objects[0].scale.x, 1);
+  assert.throws(() => e.scaleInteriorObject('object_sofa', { x: -2, y: 1, z: 1 }), MoppleValidationError);
+  assert.equal(e.canUndo, false);
+});

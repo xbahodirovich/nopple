@@ -1,122 +1,106 @@
+import assert from 'node:assert/strict';
+import { mkdir, readFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
 import { createServer } from 'vite';
 
-async function testEditor() {
-  console.log('Starting Vite server...');
-  const server = await createServer({
-    server: { port: 5174 },
-  });
+const server = await createServer({ server: { port: 5174, host: '127.0.0.1' } });
+let browser;
+try {
   await server.listen();
-  const address = server.httpServer.address();
-  const port = address.port;
-  const baseUrl = `http://localhost:${port}`;
-  console.log(`Server listening at ${baseUrl}`);
-
-  const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage();
-
-  const consoleErrors = [];
-  page.on('console', msg => {
-    if (msg.type() === 'error') consoleErrors.push(msg.text());
+  const port = server.httpServer.address().port;
+  browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 2 });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(() => {
+    window.editorDraws = 0;
+    const draw = WebGL2RenderingContext.prototype.drawElements;
+    WebGL2RenderingContext.prototype.drawElements = function (...args) { window.editorDraws++; return draw.apply(this, args); };
   });
-  page.on('pageerror', err => consoleErrors.push(err.message));
+  await page.goto(`http://127.0.0.1:${port}/editor.html`, { waitUntil: 'networkidle' });
+  assert.equal(await page.locator('canvas').count(), 2);
+  assert.equal(await page.locator('.layer-item[data-type="room"]').count(), 4);
+  assert.equal(await page.evaluate(async () => (await fetch('/api/ai/operations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status), 401);
 
-  try {
-    console.log('Navigating to /editor.html...');
-    await page.goto(`${baseUrl}/editor.html`, { waitUntil: 'networkidle' });
+  // Scale is committed, restored by undo, and remains visible after selection changes.
+  await page.locator('.layer-item[data-id="object_sofa"]').click();
+  await page.locator('#prop-scale-x').fill('2'); await page.locator('#prop-scale-x').press('Tab');
+  await page.locator('.layer-item[data-type="room"]').first().click();
+  await page.locator('.layer-item[data-id="object_sofa"]').click();
+  assert.equal(await page.locator('#prop-scale-x').inputValue(), '2');
+  await page.locator('#project-title').fill('Renamed home'); await page.locator('#project-title').press('Tab');
+  await page.locator('#btn-undo').click();
+  assert.equal(await page.locator('#project-title').inputValue(), 'Modern House');
+  assert.equal(await page.locator('#btn-undo').isEnabled(), true);
+  await page.locator('#btn-undo').click();
+  await page.locator('.layer-item[data-id="object_sofa"]').click();
+  assert.equal(await page.locator('#prop-scale-x').inputValue(), '1');
+  await page.keyboard.press('Escape');
 
-    // 1. Check title and canvas mounts
-    const title = await page.title();
-    console.log(`Page title: "${title}"`);
-    if (!title.includes('Mopple Studio')) throw new Error(`Unexpected title: ${title}`);
-
-    const has2D = await page.$eval('.mopple-canvas-2d', el => !!el);
-    const has3D = await page.$eval('.mopple-canvas-3d', el => !!el);
-    console.log(`Canvas 2D mounted: ${has2D}, Canvas 3D mounted: ${has3D}`);
-    if (!has2D || !has3D) throw new Error('Canvases failed to mount');
-
-    // 2. Check layers tree
-    const roomItems = await page.$$eval('.layer-item[data-type="room"]', els => els.length);
-    const objItems = await page.$$eval('.layer-item[data-type="object"]', els => els.length);
-    console.log(`Layers panel rendered: ${roomItems} rooms, ${objItems} objects`);
-    if (roomItems < 1 || objItems < 1) throw new Error('Layers tree empty');
-
-    // 3. Test selection by clicking a layer item
-    console.log('Clicking first object in layers...');
-    await page.click('.layer-item[data-type="object"]');
-    await page.waitForTimeout(300);
-
-    const propHeader = await page.$eval('.panel-properties .panel-title', el => el.textContent);
-    console.log(`Property header after selection: "${propHeader}"`);
-    if (!propHeader || propHeader === 'PROJECT INSPECTOR') throw new Error('Property inspector did not update on selection');
-
-    // 4. Test View Switching
-    console.log('Testing view mode switcher...');
-    await page.click('.view-tab[data-view="2d"]');
-    await page.waitForTimeout(200);
-    const is3dHidden = await page.$eval('#pane-3d', el => el.classList.contains('hidden'));
-    console.log(`In 2D mode, 3D pane is hidden: ${is3dHidden}`);
-    if (!is3dHidden) throw new Error('3D pane should be hidden in 2D mode');
-
-    await page.click('.view-tab[data-view="3d"]');
-    await page.waitForTimeout(200);
-    const is2dHidden = await page.$eval('#pane-2d', el => el.classList.contains('hidden'));
-    console.log(`In 3D mode, 2D pane is hidden: ${is2dHidden}`);
-    if (!is2dHidden) throw new Error('2D pane should be hidden in 3D mode');
-
-    await page.click('.view-tab[data-view="split"]');
-    await page.waitForTimeout(200);
-
-    // 5. Test AI Prompt execution via chip
-    console.log('Testing AI prompt execution (Make bedroom larger)...');
-    await page.click('.ai-chip[data-prompt="make the bedroom larger by 1m"]');
-    await page.waitForTimeout(600);
-
-    const aiStatus = await page.$eval('#ai-status', el => el.textContent);
-    console.log(`AI status message: "${aiStatus}"`);
-    if (!aiStatus.includes('Applied') && !aiStatus.includes('Executed')) {
-      throw new Error(`AI execution did not report success: ${aiStatus}`);
-    }
-
-    // 6. Test Undo
-    console.log('Testing Undo button...');
-    const canUndoBefore = await page.$eval('#btn-undo', el => !el.disabled);
-    console.log(`Can undo before: ${canUndoBefore}`);
-    if (!canUndoBefore) throw new Error('Undo button should be enabled after AI operation');
-
-    await page.click('#btn-undo');
-    await page.waitForTimeout(300);
-
-    const canRedoAfterUndo = await page.$eval('#btn-redo', el => !el.disabled);
-    console.log(`Can redo after undo: ${canRedoAfterUndo}`);
-    if (!canRedoAfterUndo) throw new Error('Redo button should be enabled after undo');
-
-    // 7. Test Redo
-    await page.click('#btn-redo');
-    await page.waitForTimeout(300);
-
-    // 8. Test Keyboard Shortcut (Escape to deselect)
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(200);
-    const propHeaderAfterEsc = await page.$eval('.panel-properties .panel-title', el => el.textContent);
-    console.log(`Property header after Escape: "${propHeaderAfterEsc}"`);
-    if (propHeaderAfterEsc.toUpperCase() !== 'PROJECT INSPECTOR') throw new Error('Escape should return to Project Inspector');
-
-    // 9. Check console errors
-    console.log(`Total console errors: ${consoleErrors.length}`);
-    if (consoleErrors.length > 0) {
-      console.warn('Console errors encountered:', consoleErrors);
-      throw new Error(`Found ${consoleErrors.length} console errors: ${consoleErrors.join('; ')}`);
-    }
-
-    console.log('All interactive editor tests PASSED successfully!');
-  } finally {
-    await browser.close();
-    await server.close();
+  // Common offline commands edit the expected entity.
+  async function prompt(text) {
+    await page.locator('#ai-prompt-input').fill(text);
+    await page.locator('#btn-ai-submit').click();
+    await page.locator('#ai-status.success').waitFor();
   }
-}
+  await prompt('move the sofa 1m left');
+  assert.equal(await page.locator('.layer-item[data-type="object"]').count(), 6);
+  await prompt('add a chair to the bedroom');
+  assert.equal(await page.locator('.layer-item[data-type="object"]').count(), 7);
+  await prompt('create a modern 150m² house with 3 bedrooms and 2 bathrooms');
+  assert.equal(await page.locator('.layer-item[data-type="room"]').count(), 9);
+  // pagehide must flush the latest design before the debounce expires.
+  await page.evaluate(() => dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('mopple_editor_project')));
+  assert.equal(saved.building.rooms.filter(r => r.type === 'bedroom').length, 3);
+  await page.reload({ waitUntil: 'networkidle' });
+  assert.equal(await page.locator('.layer-item[data-type="room"]').count(), 9);
 
-testEditor().catch(err => {
-  console.error('Test failed:', err);
-  process.exit(1);
-});
+  // Imported HTML remains text even in attributes and selected room headers.
+  const imported = JSON.parse(await readFile('examples/modern-house.mopple', 'utf8'));
+  imported.building.rooms[0].name = '<img src=x onerror="window.injected=true">';
+  imported.project.name = '\"><img src=x onerror="window.injected=true">';
+  await page.locator('input[type=file]').setInputFiles({ name: 'test.mopple', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(imported)) });
+  await page.locator('.layer-item[data-id="room_kitchen"]').click();
+  assert.equal(await page.locator('#prop-room-name').inputValue(), imported.building.rooms[0].name);
+  assert.equal(await page.evaluate(() => window.injected), undefined);
+  assert.equal(await page.locator('#layers-container img, #properties-container img').count(), 0);
+  await page.keyboard.press('Escape');
+
+  // Provider failures are visible, retain input and cannot fall back to another edit.
+  await page.locator('#btn-apikey').click();
+  await page.locator('#apikey-input').fill('nvapi-browser-test');
+  await page.locator('#btn-save-apikey').click();
+  await page.route('**/api/ai/operations', route => route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'Invalid API key. Your design is unchanged.' }) }));
+  await page.locator('#ai-prompt-input').fill('remove the sofa'); await page.locator('#btn-ai-submit').click();
+  await page.locator('#ai-status.error').waitFor();
+  assert.match(await page.locator('#ai-status').textContent(), /Invalid API key/);
+  assert.equal(await page.locator('#ai-prompt-input').inputValue(), 'remove the sofa');
+  assert.equal(await page.locator('.layer-item[data-id="object_sofa"]').count(), 1);
+  assert.equal(await page.evaluate(() => localStorage.getItem('mopple_nim_api_key')), null);
+  await page.unroute('**/api/ai/operations');
+  await page.locator('#btn-apikey').click(); await page.locator('#apikey-input').fill(''); await page.locator('#btn-save-apikey').click();
+
+  await page.locator('input[type=file]').setInputFiles({ name: 'modern-house.mopple', mimeType: 'application/json', buffer: Buffer.from(await readFile('examples/modern-house.mopple', 'utf8')) });
+  await page.locator('#hud-reset').click();
+  await page.waitForTimeout(100);
+  const draws = await page.evaluate(() => window.editorDraws);
+  await page.waitForTimeout(150);
+  assert.equal(await page.evaluate(() => window.editorDraws), draws, '3D stops drawing when idle');
+  await mkdir('.impeccable/review', { recursive: true });
+  await page.screenshot({ path: '.impeccable/review/editor-desktop.png' });
+
+  // Mobile keeps a usable canvas; both panels remain reachable.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('[data-view="2d"]').click();
+  assert.ok(await page.locator('#pane-2d').evaluate(el => el.clientWidth) >= 350);
+  await page.locator('[data-panel="layers-container"]').click();
+  await page.locator('.layer-item[data-id="object_sofa"]').click();
+  await page.locator('[data-panel="properties-container"]').click();
+  assert.equal(await page.locator('#prop-scale-x').isVisible(), true);
+  await page.locator('[data-panel="properties-container"]').click();
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.screenshot({ path: '.impeccable/review/editor-mobile.png' });
+  assert.deepEqual(errors, []);
+  console.log('Editor regression checks passed: scale, undo, house generation, autosave, safe imports, API errors, idle rendering, mobile panels.');
+} finally { await browser?.close(); await server.close(); }

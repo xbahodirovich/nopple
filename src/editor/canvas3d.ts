@@ -1,3 +1,4 @@
+import { buildDesignScene, disposeTree } from './scene-design.ts';
 import * as THREE from 'three';
 import type { MoppleProjectEngine } from '../project/engine.ts';
 import { distance } from '../project/geometry.ts';
@@ -8,6 +9,7 @@ import { createFurnitureMesh, getFurnitureFootprint } from './furniture.ts';
 export interface Canvas3DOptions {
   engine: MoppleProjectEngine;
   onSelect?: (entity: SelectedEntity | null) => void;
+  onError?: (error: unknown) => void;
 }
 
 export class Canvas3D {
@@ -54,12 +56,17 @@ export class Canvas3D {
   private resizeObserver: ResizeObserver;
   private unsubscribe: () => void;
   private disposed = false;
+  private visible = true;
+  private visibilityObserver: IntersectionObserver;
+  private events = new AbortController();
+  private onError: (error: unknown) => void;
 
   constructor(container: HTMLElement, options: Canvas3DOptions) {
     this.container = container;
     this.engine = options.engine;
     this.project = options.engine.getSnapshot();
     this.onSelect = options.onSelect;
+    this.onError = options.onError ?? console.error;
 
     // Renderer
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
@@ -75,7 +82,7 @@ export class Canvas3D {
 
     // Scene & Camera
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 150);
+    this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
     this.updateCameraPosition();
 
     // Scene structure
@@ -103,12 +110,19 @@ export class Canvas3D {
     this.resizeObserver.observe(this.container);
     this.resize();
 
-    // Render loop
-    this.animate();
+    this.visibilityObserver = new IntersectionObserver(entries => { this.visible = entries[0].isIntersecting; if (this.visible) this.invalidate(); });
+    this.visibilityObserver.observe(container);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) this.invalidate(); }, { signal: this.events.signal });
+    this.renderer.domElement.addEventListener('webglcontextlost', event => { event.preventDefault(); this.onError(new Error('3D context lost. Reload to restore 3D; 2D editing remains available.')); this.destroy(); }, { signal: this.events.signal });
+    this.invalidate();
   }
 
   public destroy() {
+    if (this.disposed) return;
     this.disposed = true;
+    this.events.abort();
+    this.visibilityObserver?.disconnect();
+    disposeTree(this.scene);
     if (this.animationFrameId !== null) cancelAnimationFrame(this.animationFrameId);
     this.unsubscribe();
     this.resizeObserver.disconnect();
@@ -122,10 +136,15 @@ export class Canvas3D {
   }
 
   public resetCamera() {
-    this.cameraDistance = 14;
-    this.cameraSpherical.set(14, Math.PI / 3.5, Math.PI / 4);
-    this.cameraTarget.set(0, 0.5, 0);
-    this.updateCameraPosition();
+    const bounds = new THREE.Box3().setFromObject(this.buildingGroup);
+    if (bounds.isEmpty()) { this.cameraTarget.set(0, .5, 0); this.cameraDistance = 14; }
+    else {
+      const sphere = bounds.getBoundingSphere(new THREE.Sphere());
+      this.cameraTarget.copy(sphere.center);
+      const halfFov = Math.min(Math.PI / 8, Math.atan(Math.tan(Math.PI / 8) * this.camera.aspect));
+      this.cameraDistance = Math.max(5, sphere.radius * 1.15 / Math.sin(halfFov));
+    }
+    this.cameraSpherical.set(this.cameraDistance, Math.PI / 3.5, Math.PI / 4); this.updateCameraPosition();
   }
 
   public setViewPreset(preset: 'top' | 'isometric' | 'front') {
@@ -151,6 +170,7 @@ export class Canvas3D {
     this.cameraSpherical.phi = Math.max(0.01, Math.min(Math.PI / 2 - 0.02, this.cameraSpherical.phi));
     this.camera.position.setFromSpherical(this.cameraSpherical).add(this.cameraTarget);
     this.camera.lookAt(this.cameraTarget);
+    this.invalidate();
   }
 
   private resize() {
@@ -159,6 +179,7 @@ export class Canvas3D {
     this.camera.aspect = rect.width / rect.height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(rect.width, rect.height, false);
+    this.resetCamera(); this.invalidate();
   }
 
   private setupEvents() {
@@ -169,7 +190,7 @@ export class Canvas3D {
     el.addEventListener('wheel', e => {
       e.preventDefault();
       const zoomFactor = e.deltaY > 0 ? 1.08 : 0.92;
-      this.cameraDistance = Math.max(3, Math.min(45, this.cameraDistance * zoomFactor));
+      this.cameraDistance = Math.max(3, Math.min(400, this.cameraDistance * zoomFactor));
       this.updateCameraPosition();
     }, { passive: false });
 
@@ -301,6 +322,7 @@ export class Canvas3D {
     });
 
     const finishPointer = (e: PointerEvent) => {
+      if (e.type === 'pointercancel') { this.isPanning = this.isOrbiting = this.isDraggingObject = false; this.draggedObject = null; this.project = this.engine.getSnapshot(); this.rebuildScene(); return; }
       if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
 
       if (this.isDraggingObject && this.draggedObject) {
@@ -310,7 +332,7 @@ export class Canvas3D {
         try {
           this.engine.moveInteriorObject(obj.id, obj.position, obj.rotation, obj.roomId);
         } catch (err) {
-          console.error('Failed to commit 3D drag', err);
+          this.project = this.engine.getSnapshot(); this.rebuildScene(); this.onError(err);
         }
       }
 
@@ -324,265 +346,16 @@ export class Canvas3D {
   }
 
   private rebuildScene() {
-    // Clear dynamic groups
-    this.clearGroup(this.buildingGroup);
-    this.clearGroup(this.furnitureGroup);
-    this.clearGroup(this.lightingGroup);
-
-    // 1. Build Lights
-    this.buildLights();
-
-    // 2. Build Floor Plate
-    this.buildFloors();
-
-    // 3. Build Walls with Window & Door cutouts
-    this.buildWalls();
-
-    // 4. Build Furniture Objects
-    this.buildFurniture();
-
-    // 5. Update Selection Visuals
-    this.updateSelectionVisuals();
+    this.clearGroup(this.buildingGroup); this.clearGroup(this.furnitureGroup); this.clearGroup(this.lightingGroup);
+    const next = buildDesignScene(this.project);
+    this.buildingGroup.add(next.building); this.furnitureGroup.add(...[...next.furniture.children]); this.lightingGroup.add(next.lighting);
+    this.updateSelectionVisuals(); this.invalidate();
   }
-
-  private clearGroup(group: THREE.Group) {
-    while (group.children.length > 0) {
-      const child = group.children[0];
-      group.remove(child);
-      if (child instanceof THREE.Mesh) {
-        child.geometry.dispose();
-      }
-    }
-  }
-
-  private buildLights() {
-    // Hemisphere ambient light
-    const hemiLight = new THREE.HemisphereLight('#edf2ee', '#2e3a35', 1.8);
-    this.lightingGroup.add(hemiLight);
-
-    // Main sun
-    const sun = new THREE.DirectionalLight('#fff5e3', 2.8);
-    sun.position.set(-8, 14, 9);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(1024, 1024);
-    sun.shadow.camera.left = -12;
-    sun.shadow.camera.right = 12;
-    sun.shadow.camera.top = 12;
-    sun.shadow.camera.bottom = -12;
-    sun.shadow.camera.near = 0.5;
-    sun.shadow.camera.far = 40;
-    sun.shadow.bias = -0.0004;
-    this.lightingGroup.add(sun);
-
-    // Soft cool fill
-    const fill = new THREE.DirectionalLight('#b3d9ce', 0.9);
-    fill.position.set(10, 8, -8);
-    this.lightingGroup.add(fill);
-
-    // Project point lights
-    for (const light of this.project.lighting) {
-      if (light.type === 'point') {
-        const ptLight = new THREE.PointLight(light.color, light.intensity * 2, light.range * 1.5);
-        ptLight.position.set(light.position.x, light.position.y, light.position.z);
-        ptLight.castShadow = false;
-        this.lightingGroup.add(ptLight);
-
-        // Small emissive bulb indicator
-        const bulb = new THREE.Mesh(
-          new THREE.SphereGeometry(0.08, 8, 8),
-          new THREE.MeshBasicMaterial({ color: light.color })
-        );
-        bulb.position.copy(ptLight.position);
-        this.lightingGroup.add(bulb);
-      }
-    }
-  }
-
-  private buildFloors() {
-    // Floor slab
-    const floorMat = new THREE.MeshStandardMaterial({
-      color: '#c4b59f',
-      roughness: 0.8,
-      metalness: 0.05,
-    });
-
-    // Check project materials for floor override
-    const primaryFloorMat = this.project.materials.find(m => m.kind === 'flooring' || m.id.includes('floor') || m.id.includes('oak'));
-    if (primaryFloorMat) {
-      floorMat.color.set(primaryFloorMat.color);
-      floorMat.roughness = primaryFloorMat.roughness;
-      floorMat.metalness = primaryFloorMat.metalness;
-    }
-
-    // Compute bounding box of building
-    let minX = -5, maxX = 5, minZ = -4, maxZ = 4;
-    if (this.project.building.walls.length > 0) {
-      const allX = this.project.building.walls.flatMap(w => [w.start.x, w.end.x]);
-      const allZ = this.project.building.walls.flatMap(w => [w.start.z, w.end.z]);
-      minX = Math.min(...allX) - 0.6;
-      maxX = Math.max(...allX) + 0.6;
-      minZ = Math.min(...allZ) - 0.6;
-      maxZ = Math.max(...allZ) + 0.6;
-    }
-
-    const fw = maxX - minX;
-    const fd = maxZ - minZ;
-    const cx = (minX + maxX) / 2;
-    const cz = (minZ + maxZ) / 2;
-
-    const floorGeo = new THREE.BoxGeometry(fw, 0.15, fd);
-    const floorMesh = new THREE.Mesh(floorGeo, floorMat);
-    floorMesh.position.set(cx, -0.075, cz);
-    floorMesh.receiveShadow = true;
-    this.buildingGroup.add(floorMesh);
-
-    // Foundation plinth
-    const plinthMat = new THREE.MeshStandardMaterial({ color: '#202925', roughness: 0.9 });
-    const plinthGeo = new THREE.BoxGeometry(fw + 0.5, 0.2, fd + 0.5);
-    const plinthMesh = new THREE.Mesh(plinthGeo, plinthMat);
-    plinthMesh.position.set(cx, -0.22, cz);
-    this.buildingGroup.add(plinthMesh);
-  }
-
-  private buildWalls() {
-    const defaultWallMat = new THREE.MeshStandardMaterial({
-      color: '#ded9cf',
-      roughness: 0.85,
-      metalness: 0.0,
-    });
-    const glassMat = new THREE.MeshStandardMaterial({
-      color: '#a8c6be',
-      roughness: 0.1,
-      metalness: 0.2,
-      transparent: true,
-      opacity: 0.35,
-    });
-    const frameMat = new THREE.MeshStandardMaterial({ color: '#232927', roughness: 0.5, metalness: 0.4 });
-    const doorMat = new THREE.MeshStandardMaterial({ color: '#8c6e52', roughness: 0.7, metalness: 0.05 });
-
-    for (const wall of this.project.building.walls) {
-      const len = distance(wall.start, wall.end);
-      if (len < 0.01) continue;
-
-      const angle = Math.atan2(wall.end.z - wall.start.z, wall.end.x - wall.start.x);
-      const wallGroup = new THREE.Group();
-      wallGroup.position.set(wall.start.x, 0, wall.start.z);
-      wallGroup.rotation.y = -angle; // Three.js rotation around Y
-
-      let wallMat = defaultWallMat;
-      if (wall.materialId && this.materialsMap.has(wall.materialId)) {
-        const m = this.materialsMap.get(wall.materialId)!;
-        wallMat = new THREE.MeshStandardMaterial({ color: m.color, roughness: m.roughness, metalness: m.metalness });
-      }
-
-      // Collect openings sorted along wall (position 0..1)
-      const openings = [
-        ...this.project.building.doors.filter(d => d.wallId === wall.id).map(d => ({ ...d, kind: 'door' as const, sill: 0 })),
-        ...this.project.building.windows.filter(w => w.wallId === wall.id).map(w => ({ ...w, kind: 'window' as const, sill: w.sillHeight })),
-      ].sort((a, b) => a.position - b.position);
-
-      if (openings.length === 0) {
-        // Solid wall
-        const geo = new THREE.BoxGeometry(len, wall.height, wall.thickness);
-        const mesh = new THREE.Mesh(geo, wallMat);
-        mesh.position.set(len / 2, wall.height / 2, 0);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        mesh.userData = { wallId: wall.id };
-        wallGroup.add(mesh);
-      } else {
-        // Construct wall segments between openings
-        let currentPos = 0;
-        for (const op of openings) {
-          const opStart = Math.max(0, len * op.position - op.width / 2);
-          const opEnd = Math.min(len, len * op.position + op.width / 2);
-
-          // Wall segment before opening
-          const segLen = opStart - currentPos;
-          if (segLen > 0.01) {
-            const segGeo = new THREE.BoxGeometry(segLen, wall.height, wall.thickness);
-            const segMesh = new THREE.Mesh(segGeo, wallMat);
-            segMesh.position.set(currentPos + segLen / 2, wall.height / 2, 0);
-            segMesh.castShadow = true;
-            segMesh.receiveShadow = true;
-            segMesh.userData = { wallId: wall.id };
-            wallGroup.add(segMesh);
-          }
-
-          // Wall below opening (for windows with sillHeight > 0)
-          if (op.kind === 'window' && op.sill > 0.01) {
-            const sillGeo = new THREE.BoxGeometry(op.width, op.sill, wall.thickness);
-            const sillMesh = new THREE.Mesh(sillGeo, wallMat);
-            sillMesh.position.set(opStart + op.width / 2, op.sill / 2, 0);
-            sillMesh.castShadow = true;
-            sillMesh.receiveShadow = true;
-            sillMesh.userData = { wallId: wall.id };
-            wallGroup.add(sillMesh);
-          }
-
-          // Wall segment above opening (lintel)
-          const topGap = wall.height - (op.sill + op.height);
-          if (topGap > 0.01) {
-            const lintelGeo = new THREE.BoxGeometry(op.width, topGap, wall.thickness);
-            const lintelMesh = new THREE.Mesh(lintelGeo, wallMat);
-            lintelMesh.position.set(opStart + op.width / 2, wall.height - topGap / 2, 0);
-            lintelMesh.castShadow = true;
-            lintelMesh.receiveShadow = true;
-            lintelMesh.userData = { wallId: wall.id };
-            wallGroup.add(lintelMesh);
-          }
-
-          // Opening elements (door slab / window glass and frame)
-          const opCenter = opStart + op.width / 2;
-          if (op.kind === 'window') {
-            // Window frame
-            const fGeo = new THREE.BoxGeometry(op.width, op.height, wall.thickness * 0.4);
-            const fMesh = new THREE.Mesh(fGeo, frameMat);
-            fMesh.position.set(opCenter, op.sill + op.height / 2, 0);
-            // Window glass
-            const gGeo = new THREE.BoxGeometry(op.width - 0.08, op.height - 0.08, 0.02);
-            const gMesh = new THREE.Mesh(gGeo, glassMat);
-            gMesh.position.set(opCenter, op.sill + op.height / 2, 0);
-            wallGroup.add(fMesh, gMesh);
-          } else if (op.kind === 'door') {
-            // Door slab (slightly ajar 25 degrees)
-            const doorGeo = new THREE.BoxGeometry(op.width, op.height, 0.04);
-            const doorMesh = new THREE.Mesh(doorGeo, doorMat);
-            doorMesh.position.set(opStart + op.width / 2, op.height / 2, 0.08);
-            doorMesh.rotation.y = 0.4;
-            doorMesh.castShadow = true;
-            wallGroup.add(doorMesh);
-          }
-
-          currentPos = opEnd;
-        }
-
-        // Final segment after last opening
-        const remaining = len - currentPos;
-        if (remaining > 0.01) {
-          const segGeo = new THREE.BoxGeometry(remaining, wall.height, wall.thickness);
-          const segMesh = new THREE.Mesh(segGeo, wallMat);
-          segMesh.position.set(currentPos + remaining / 2, wall.height / 2, 0);
-          segMesh.castShadow = true;
-          segMesh.receiveShadow = true;
-          segMesh.userData = { wallId: wall.id };
-          wallGroup.add(segMesh);
-        }
-      }
-
-      this.buildingGroup.add(wallGroup);
-    }
-  }
-
-  private buildFurniture() {
-    for (const obj of this.project.interior.objects) {
-      const meshGroup = createFurnitureMesh(obj, this.materialsMap);
-      this.furnitureGroup.add(meshGroup);
-    }
-  }
+  private clearGroup(group: THREE.Group) { disposeTree(group); }
 
   private updateSelectionVisuals() {
     this.clearGroup(this.selectionHelper);
+    this.invalidate();
 
     if (this.selected?.type === 'object') {
       const obj = this.project.interior.objects.find(o => o.id === this.selected?.id);
@@ -597,15 +370,17 @@ export class Canvas3D {
         const ringMat = new THREE.MeshBasicMaterial({ color: 0xa8e8d2, side: THREE.DoubleSide });
         const ring = new THREE.Mesh(ringGeo, ringMat);
         ring.rotation.x = -Math.PI / 2;
-        ring.position.set(obj.position.x, 0.02, obj.position.z);
+        ring.position.set(obj.position.x, obj.position.y + 0.02, obj.position.z);
         this.selectionHelper.add(ring);
       }
     }
   }
 
-  private animate = () => {
-    if (this.disposed) return;
-    this.renderer.render(this.scene, this.camera);
-    this.animationFrameId = requestAnimationFrame(this.animate);
+  private invalidate = () => {
+    if (this.disposed || this.animationFrameId !== null) return;
+    this.animationFrameId = requestAnimationFrame(() => {
+      this.animationFrameId = null;
+      if (!this.disposed && this.visible && !document.hidden && this.container.clientWidth && this.container.clientHeight) this.renderer.render(this.scene, this.camera);
+    });
   };
 }

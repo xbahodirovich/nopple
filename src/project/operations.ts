@@ -3,8 +3,11 @@ import { doorSchema, floorSchema, idSchema, lightSchema, materialSchema, objectS
 import { MoppleValidationError } from './validation.ts';
 
 export const operationSchema = z.discriminatedUnion('type', [
+  z.strictObject({ type: z.literal('rename_project'), name: z.string().trim().min(1).max(200) }),
+  z.strictObject({ type: z.literal('create_house'), area: z.number().min(40).max(600), bedrooms: z.number().int().min(1).max(8), bathrooms: z.number().int().min(1).max(5), style: z.string().trim().min(1).max(200) }),
   z.strictObject({ type: z.literal('add_floor'), floor: floorSchema }),
   z.strictObject({ type: z.literal('create_room'), room: roomSchema }),
+  z.strictObject({ type: z.literal('remove_room'), targetId: idSchema }),
   z.strictObject({ type: z.literal('update_room'), targetId: idSchema, changes: roomSchema.omit({ id: true, floorId: true, boundary: true }).partial() }),
   z.strictObject({ type: z.literal('resize_room'), targetId: idSchema, width: z.number().positive(), depth: z.number().positive() }),
   z.strictObject({ type: z.literal('add_wall'), wall: wallSchema }),
@@ -16,6 +19,7 @@ export const operationSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('add_object'), object: objectSchema }),
   z.strictObject({ type: z.literal('move_object'), targetId: idSchema, position: vectorSchema, rotation: vectorSchema.optional(), roomId: idSchema.optional() }),
   z.strictObject({ type: z.literal('remove_object'), targetId: idSchema }),
+  z.strictObject({ type: z.literal('scale_object'), targetId: idSchema, scale: objectSchema.shape.scale }),
   // Upsert a reusable material; all existing references immediately see its change.
   z.strictObject({ type: z.literal('change_material'), material: materialSchema }),
   z.strictObject({ type: z.literal('change_room_style'), targetId: idSchema, style: z.string().trim().min(1).max(200) }),
