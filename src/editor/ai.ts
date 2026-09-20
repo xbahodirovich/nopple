@@ -8,35 +8,44 @@ export interface AIExecutionResult {
   success: boolean;
   message: string;
   operationsCount: number;
-  source: 'gemini_3_1_pro' | 'gemini' | 'local_semantic';
+  source: 'nvidia_nim' | 'local_semantic';
   model?: string;
 }
 
-export const DEFAULT_GEMINI_MODEL = 'gemini-3.1-pro-preview';
-const GEMINI_API_KEY_STORAGE = 'mopple_gemini_api_key';
-const GEMINI_MODEL_STORAGE = 'mopple_gemini_model';
+export const DEFAULT_AI_MODEL = 'z-ai/glm-5.3-flash';
+export const DEFAULT_GEMINI_MODEL = DEFAULT_AI_MODEL; // Backward compatibility alias
+const NIM_API_KEY_STORAGE = 'mopple_nim_api_key';
+const LEGACY_GEMINI_KEY_STORAGE = 'mopple_gemini_api_key';
+const AI_MODEL_STORAGE = 'mopple_ai_model';
+const LEGACY_MODEL_STORAGE = 'mopple_gemini_model';
 
 export function getStoredApiKey(): string {
-  return localStorage.getItem(GEMINI_API_KEY_STORAGE) || '';
+  return localStorage.getItem(NIM_API_KEY_STORAGE) || localStorage.getItem(LEGACY_GEMINI_KEY_STORAGE) || '';
 }
 
 export function setStoredApiKey(key: string): void {
   if (!key) {
-    localStorage.removeItem(GEMINI_API_KEY_STORAGE);
+    localStorage.removeItem(NIM_API_KEY_STORAGE);
+    localStorage.removeItem(LEGACY_GEMINI_KEY_STORAGE);
   } else {
-    localStorage.setItem(GEMINI_API_KEY_STORAGE, key.trim());
+    localStorage.setItem(NIM_API_KEY_STORAGE, key.trim());
   }
 }
 
 export function getStoredModel(): string {
-  return localStorage.getItem(GEMINI_MODEL_STORAGE) || DEFAULT_GEMINI_MODEL;
+  const stored = localStorage.getItem(AI_MODEL_STORAGE) || localStorage.getItem(LEGACY_MODEL_STORAGE);
+  if (!stored || stored.includes('gemini')) {
+    return DEFAULT_AI_MODEL;
+  }
+  return stored;
 }
 
 export function setStoredModel(model: string): void {
   if (!model) {
-    localStorage.removeItem(GEMINI_MODEL_STORAGE);
+    localStorage.removeItem(AI_MODEL_STORAGE);
+    localStorage.removeItem(LEGACY_MODEL_STORAGE);
   } else {
-    localStorage.setItem(GEMINI_MODEL_STORAGE, model.trim());
+    localStorage.setItem(AI_MODEL_STORAGE, model.trim());
   }
 }
 
@@ -55,34 +64,34 @@ export async function executeAiPrompt(
 
   const apiKey = getStoredApiKey();
   const requestedModel = getStoredModel();
-  let geminiError: string | null = null;
+  let nimError: string | null = null;
 
-  // If API key is provided, attempt Gemini API call first
+  // If API key is provided, attempt NVIDIA NIM API call first
   if (apiKey) {
     try {
-      const result = await callGeminiApi(cleanPrompt, engine.getSnapshot(), apiKey, selectedId, requestedModel);
+      const result = await callNvidiaNimApi(cleanPrompt, engine.getSnapshot(), apiKey, selectedId, requestedModel);
       if (result && result.operations && result.operations.operations.length > 0) {
         engine.applyOperations(result.operations);
-        const is31Pro = result.modelUsed.includes('3.1-pro') || result.modelUsed.includes('3-pro');
+        const isGlm = result.modelUsed.includes('glm');
         return {
           success: true,
-          message: `Executed ${result.operations.operations.length} operation(s) via ${is31Pro ? 'Gemini 3.1 Pro' : 'Gemini'} (${result.modelUsed})`,
+          message: `Executed ${result.operations.operations.length} operation(s) via ${isGlm ? 'GLM 5.3 Flash' : result.modelUsed} (NVIDIA NIM)`,
           operationsCount: result.operations.operations.length,
-          source: is31Pro ? 'gemini_3_1_pro' : 'gemini',
+          source: 'nvidia_nim',
           model: result.modelUsed,
         };
       }
     } catch (err: any) {
-      console.warn('Gemini API call failed:', err);
-      geminiError = err?.message || 'Unknown Gemini API error';
+      console.warn('NVIDIA NIM API call failed:', err);
+      nimError = err?.message || 'Unknown NVIDIA NIM API error';
     }
   }
 
   // Local semantic natural language interpreter
   const operations = interpretPromptLocally(cleanPrompt, engine.getSnapshot(), selectedId);
   if (!operations || operations.length === 0) {
-    if (geminiError) {
-      throw new Error(`Gemini 3.1 Pro Error: ${geminiError}`);
+    if (nimError) {
+      throw new Error(`NVIDIA NIM (GLM 5.3 Flash) Error: ${nimError}`);
     }
     throw new Error(`Could not determine operations for: "${cleanPrompt}". Try asking to resize a room, add or replace furniture, change materials, or update lighting.`);
   }
@@ -92,8 +101,8 @@ export async function executeAiPrompt(
 
   return {
     success: true,
-    message: geminiError
-      ? `Applied ${validated.operations.length} change(s) via local engine (Note: Gemini API error: ${geminiError})`
+    message: nimError
+      ? `Applied ${validated.operations.length} change(s) via local engine (Note: NVIDIA NIM error: ${nimError})`
       : `Applied ${validated.operations.length} change(s) seamlessly`,
     operationsCount: validated.operations.length,
     source: 'local_semantic',
@@ -386,9 +395,9 @@ function findMentionedFurnitureKind(text: string): MoppleInteriorObject['kind'] 
 }
 
 /**
- * Robust sanitizer that cleans and validates Gemini API operations against Mopple Schema.
+ * Robust sanitizer that cleans and validates LLM API operations (NVIDIA NIM / GLM / Gemini) against Mopple Schema.
  */
-export function sanitizeGeminiOperations(raw: any, project: MoppleProject): MoppleOperations {
+export function sanitizeOperations(raw: any, project: MoppleProject): MoppleOperations {
   let list: any[] = [];
   if (Array.isArray(raw)) {
     list = raw;
@@ -409,18 +418,20 @@ export function sanitizeGeminiOperations(raw: any, project: MoppleProject): Mopp
     const type = item.type;
 
     if (type === 'add_object') {
-      const o = item.object || item;
-      const rawKind = String(o.kind || item.kind || 'decoration').toLowerCase();
-      const kind = normalizeFurnitureKind(rawKind) || 'decoration';
+      const o = item.object;
+      if (!o || typeof o !== 'object') continue;
 
-      let roomId = o.roomId || item.roomId;
+      const validKinds = ['sofa', 'bed', 'table', 'chair', 'cabinet', 'lamp', 'decoration', 'appliance'];
+      let kind = validKinds.includes(o.kind) ? o.kind : normalizeFurnitureKind(String(o.kind || 'sofa'));
+      if (!kind) kind = 'sofa';
+
+      let roomId = String(o.roomId || '');
       if (!rooms.some(r => r.id === roomId)) {
-        const matchingRoom = rooms.find(r => r.type === roomId || r.name.toLowerCase().includes(String(roomId).toLowerCase()));
-        roomId = matchingRoom ? matchingRoom.id : (rooms[0]?.id || 'room_default');
+        const found = rooms.find(r => r.name.toLowerCase().includes(roomId.toLowerCase()) || r.type.includes(roomId.toLowerCase()));
+        roomId = found ? found.id : rooms[0].id;
       }
 
-      const rawId = String(o.id || `object_${kind}_${Date.now().toString(36).slice(-4)}`);
-      const id = rawId.replace(/[^A-Za-z0-9_-]/g, '_').replace(/^[^A-Za-z]/, 'obj_$&');
+      const id = String(o.id || `object_${kind}_${Date.now().toString(36).slice(-4)}`).replace(/[^A-Za-z0-9_-]/g, '_').replace(/^[^A-Za-z]/, 'obj_$&');
       const assetId = String(o.assetId || `${kind}_item`).replace(/[^A-Za-z0-9_-]/g, '_').replace(/^[^A-Za-z]/, 'asset_$&');
 
       cleanOps.push({
@@ -540,18 +551,19 @@ export function sanitizeGeminiOperations(raw: any, project: MoppleProject): Mopp
   return validateOperations({ operations: cleanOps });
 }
 
+export const sanitizeGeminiOperations = sanitizeOperations;
+
 /**
- * Direct Gemini API Integration supporting Gemini 3.1 Pro
+ * Direct NVIDIA NIM API integration supporting GLM 5.3 Flash (z-ai/glm-5.3-flash)
  */
-async function callGeminiApi(
+async function callNvidiaNimApi(
   prompt: string,
   project: MoppleProject,
   apiKey: string,
   selectedId?: string,
   modelName = getStoredModel()
 ): Promise<{ operations: MoppleOperations; modelUsed: string }> {
-  const systemInstruction = `
-You are Mopple AI, an architectural home design copilot powered by Gemini 3.1 Pro.
+  const systemInstruction = `You are Mopple AI, an architectural home design copilot powered by GLM 5.3 Flash on NVIDIA NIM.
 You receive a user design instruction and the current Mopple project JSON.
 You must return ONLY a valid JSON object matching:
 {
@@ -568,56 +580,31 @@ Valid operation types:
 - "update_lighting": { "type": "update_lighting", "lights": [ ... ] }
 
 Selected entity ID (if any): ${selectedId ?? 'none'}.
-Return strictly pure JSON with NO markdown code fences or backticks.
-`;
+Return strictly pure JSON with NO markdown code fences or backticks.`;
+
+  const activeModel = modelName || DEFAULT_AI_MODEL;
+  const userContent = `User request: "${prompt}"\nCurrent Project Summary:\nRooms: ${JSON.stringify(project.building.rooms.map(r => ({ id: r.id, name: r.name, type: r.type })))}\nObjects: ${JSON.stringify(project.interior.objects.map(o => ({ id: o.id, kind: o.kind, roomId: o.roomId })))}`;
 
   const body = {
-    contents: [
-      {
-        parts: [
-          { text: `User request: "${prompt}"\nCurrent Project Summary:\nRooms: ${JSON.stringify(project.building.rooms.map(r => ({ id: r.id, name: r.name, type: r.type })))}\nObjects: ${JSON.stringify(project.interior.objects.map(o => ({ id: o.id, kind: o.kind, roomId: o.roomId })))}` },
-        ],
-      },
+    model: activeModel,
+    messages: [
+      { role: 'system', content: systemInstruction },
+      { role: 'user', content: userContent },
     ],
-    systemInstruction: {
-      parts: [{ text: systemInstruction }],
-    },
-    generationConfig: {
-      responseMimeType: 'application/json',
-      temperature: 0.2,
-    },
+    temperature: 0.2,
+    max_tokens: 2048,
+    response_format: { type: 'json_object' },
   };
 
-  let activeModel = modelName;
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${apiKey}`;
-  let response = await fetch(endpoint, {
+  const endpoint = 'https://integrate.api.nvidia.com/v1/chat/completions';
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-goog-api-key': apiKey,
+      'Authorization': `Bearer ${apiKey.trim()}`,
     },
     body: JSON.stringify(body),
   });
-
-  // If initial model request fails with 404/not found and we requested gemini-3.1-pro-preview, try alias
-  if (!response.ok && activeModel === 'gemini-3.1-pro-preview') {
-    const fallbackModel = 'gemini-3-pro-preview';
-    const altResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${fallbackModel}:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey,
-        },
-        body: JSON.stringify(body),
-      }
-    );
-    if (altResponse.ok) {
-      response = altResponse;
-      activeModel = fallbackModel;
-    }
-  }
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -626,12 +613,25 @@ Return strictly pure JSON with NO markdown code fences or backticks.
       const errObj = JSON.parse(errorText);
       if (errObj.error?.message) errorDetail = errObj.error.message;
     } catch {}
+
+    if (response.status === 401) {
+      throw new Error(`(401) Invalid or unauthorized NVIDIA NIM API key. Please check your nvapi- key from build.nvidia.com.`);
+    }
+    if (response.status === 403) {
+      throw new Error(`(403) Forbidden. Your NVIDIA NIM API key lacks permissions for model "${activeModel}".`);
+    }
+    if (response.status === 429) {
+      throw new Error(`(429) Rate limit reached on NVIDIA NIM. Please wait a moment and try again.`);
+    }
     throw new Error(`(${response.status}) ${errorDetail}`);
   }
 
   const data = await response.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error('No response text from Gemini API');
+  let text = data?.choices?.[0]?.message?.content;
+  if (!text) throw new Error('No response text received from NVIDIA NIM API');
+
+  // Strip <think>...</think> tags if reasoning tokens are emitted
+  text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
   const jsonStr = text.replace(/```json/gi, '').replace(/```/g, '').trim();
   let parsed: any;
@@ -643,9 +643,9 @@ Return strictly pure JSON with NO markdown code fences or backticks.
     if (start !== -1 && end > start) {
       parsed = JSON.parse(jsonStr.substring(start, end + 1));
     } else {
-      throw new Error('Could not parse valid JSON from Gemini output');
+      throw new Error('Could not parse valid JSON from NVIDIA NIM output');
     }
   }
 
-  return { operations: sanitizeGeminiOperations(parsed, project), modelUsed: activeModel };
+  return { operations: sanitizeOperations(parsed, project), modelUsed: activeModel };
 }

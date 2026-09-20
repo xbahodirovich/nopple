@@ -288,15 +288,15 @@ export function initEditor() {
     if (!aiEngineBadge || !engineBadgeText) return;
 
     if (hasKey) {
-      aiEngineBadge.classList.add('active-gemini');
-      const is31 = model.includes('3.1-pro') || model.includes('3-pro');
-      const label = is31 ? 'Gemini 3.1 Pro' : (model.includes('3.5-flash') ? 'Gemini 3.5 Flash' : 'Gemini Active');
+      aiEngineBadge.classList.add('active-gemini', 'active-nim');
+      const isGlm = model.includes('glm');
+      const label = isGlm ? 'GLM 5.3 Flash' : (model.includes('llama') ? 'Llama 3.3 70B' : (model.includes('deepseek') ? 'DeepSeek R1' : 'NVIDIA NIM'));
       engineBadgeText.textContent = `⚡ ${label}`;
-      aiEngineBadge.title = `Using ${model}. Click to configure model or API key.`;
+      aiEngineBadge.title = `Using ${model} via NVIDIA NIM. Click to configure model or API key.`;
     } else {
-      aiEngineBadge.classList.remove('active-gemini');
+      aiEngineBadge.classList.remove('active-gemini', 'active-nim');
       engineBadgeText.textContent = 'Offline Engine';
-      aiEngineBadge.title = 'Running local semantic engine. Click to connect Gemini 3.1 Pro.';
+      aiEngineBadge.title = 'Running local semantic engine. Click to connect NVIDIA NIM (GLM 5.3 Flash).';
     }
   }
 
@@ -323,7 +323,7 @@ export function initEditor() {
 
     aiStatus.className = 'ai-status visible loading';
     aiStatus.innerHTML = `<span class="ai-spinner"></span><span>${
-      hasKey ? `Gemini 3.1 Pro is processing architecture changes...` : 'Analyzing prompt locally...'
+      hasKey ? `GLM 5.3 Flash (NVIDIA NIM) is processing architecture changes...` : 'Analyzing prompt locally...'
     }</span>`;
     aiSubmit.disabled = true;
 
@@ -393,7 +393,7 @@ export function initEditor() {
     const hasKey = Boolean(getStoredApiKey());
     if (hasKey) {
       aiStatus.className = 'ai-status visible success';
-      aiStatus.innerHTML = '<span class="status-icon">✓</span><span>Gemini 3.1 Pro configured and active!</span>';
+      aiStatus.innerHTML = '<span class="status-icon">✓</span><span>GLM 5.3 Flash (NVIDIA NIM) configured and active!</span>';
       if (statusTimeout) clearTimeout(statusTimeout);
       statusTimeout = setTimeout(() => aiStatus.classList.remove('visible'), 4000);
     }

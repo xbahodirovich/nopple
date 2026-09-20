@@ -62,7 +62,7 @@ test('AI local interpreter: update lighting mood', () => {
   assert.doesNotThrow(() => engine.applyOperations(validated));
 });
 
-test('Gemini 3.1 Pro model configuration defaults and persistence', async () => {
+test('NVIDIA NIM GLM 5.3 Flash model configuration defaults and persistence', async () => {
   // Mock localStorage for Node test runner
   const storage = new Map<string, string>();
   globalThis.localStorage = {
@@ -74,15 +74,20 @@ test('Gemini 3.1 Pro model configuration defaults and persistence', async () => 
     length: storage.size,
   } as Storage;
 
-  const { DEFAULT_GEMINI_MODEL, getStoredModel, setStoredModel } = await import('./ai.ts');
-  assert.equal(DEFAULT_GEMINI_MODEL, 'gemini-3.1-pro-preview');
-  assert.equal(getStoredModel(), 'gemini-3.1-pro-preview');
+  const { DEFAULT_AI_MODEL, getStoredModel, setStoredModel } = await import('./ai.ts');
+  assert.equal(DEFAULT_AI_MODEL, 'z-ai/glm-5.3-flash');
+  assert.equal(getStoredModel(), 'z-ai/glm-5.3-flash');
 
-  setStoredModel('gemini-3.1-pro-preview-customtools');
-  assert.equal(getStoredModel(), 'gemini-3.1-pro-preview-customtools');
+  // Custom model selection
+  setStoredModel('meta/llama-3.3-70b-instruct');
+  assert.equal(getStoredModel(), 'meta/llama-3.3-70b-instruct');
+
+  // Legacy gemini model migration to GLM 5.3 Flash
+  setStoredModel('gemini-3.1-pro-preview');
+  assert.equal(getStoredModel(), 'z-ai/glm-5.3-flash');
 
   setStoredModel('');
-  assert.equal(getStoredModel(), 'gemini-3.1-pro-preview');
+  assert.equal(getStoredModel(), 'z-ai/glm-5.3-flash');
 });
 
 test('AI local interpreter: multiple items, wall colors, rotation, cozy and styles', () => {
@@ -122,13 +127,15 @@ test('AI local interpreter: multiple items, wall colors, rotation, cozy and styl
   assert.doesNotThrow(() => engine.applyOperations(validateOperations({ operations: opsStyle })));
 });
 
-test('Gemini 3.1 Pro sanitization: strips extra fields and fixes IDs and transforms', async () => {
-  const { sanitizeGeminiOperations } = await import('./ai.ts');
+test('NVIDIA NIM & GLM 5.3 Flash sanitization: strips extra fields and fixes IDs and transforms', async () => {
+  const { sanitizeOperations, sanitizeGeminiOperations } = await import('./ai.ts');
+  assert.equal(sanitizeOperations, sanitizeGeminiOperations);
+
   const project = parseProject(example);
   const engine = new MoppleProjectEngine(project);
 
-  // Gemini returns extra fields (thought, explanation) and missing transforms
-  const rawGeminiOutput = {
+  // GLM 5.3 Flash / NIM returns extra fields (thought, explanation) and missing transforms
+  const rawNimOutput = {
     thought: 'The user wants a modern armchair in the living room and larger bedroom.',
     operations: [
       {
@@ -152,7 +159,7 @@ test('Gemini 3.1 Pro sanitization: strips extra fields and fixes IDs and transfo
     ],
   };
 
-  const sanitized = sanitizeGeminiOperations(rawGeminiOutput, project);
+  const sanitized = sanitizeOperations(rawNimOutput, project);
   assert.equal(sanitized.operations.length, 2);
   assert.equal(sanitized.operations[0].type, 'add_object');
   if (sanitized.operations[0].type === 'add_object') {
