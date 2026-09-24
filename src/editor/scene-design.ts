@@ -2,6 +2,14 @@ import * as THREE from 'three';
 import type { MoppleProject, MoppleMaterial } from '../project/schema.ts';
 import { createProjectViews } from '../project/adapters.ts';
 import { createFurnitureMesh } from './furniture.ts';
+import {
+  getWoodPlankTexture,
+  getMarbleTexture,
+  getTileTexture,
+  getPlasterBumpTexture,
+  getLawnTexture,
+  getMapPlotTexture,
+} from './textures.ts';
 
 export function disposeTree(root: THREE.Object3D): void {
   const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
@@ -20,21 +28,73 @@ export function buildDesignScene(project: MoppleProject) {
   const building = new THREE.Group(), furniture = new THREE.Group(), lighting = new THREE.Group();
   const definitions = new Map(project.materials.map(m => [m.id, m]));
   const cache = new Map<string, THREE.MeshStandardMaterial>();
-  function material(id?: string, color = '#ded9cf') {
-    const key = id ?? color;
+  function material(id?: string, color = '#ded9cf', kind: 'floor' | 'wall' | 'other' = 'other') {
+    const key = `${id ?? color}_${kind}`;
     let result = cache.get(key);
     if (!result) {
       const m: MoppleMaterial | undefined = id ? definitions.get(id) : undefined;
       const opacity = m?.opacity ?? (color === '#a8c6be' ? .3 : 1);
-      result = new THREE.MeshStandardMaterial({ color: m?.color ?? color, roughness: m?.roughness ?? .8, metalness: m?.metalness ?? 0, opacity, transparent: opacity < 1, side: THREE.DoubleSide });
+      const cat = m?.kind?.toLowerCase() || '';
+      const name = (m?.name || id || '').toLowerCase();
+
+      let map: THREE.Texture | null = null;
+      let bumpMap: THREE.Texture | null = null;
+      let bumpScale = 0;
+      let roughness = m?.roughness ?? 0.8;
+      let metalness = m?.metalness ?? 0;
+
+      if (cat === 'wood' || name.includes('wood') || name.includes('oak') || name.includes('parquet')) {
+        map = getWoodPlankTexture(m?.color ?? color, 3, 3);
+        roughness = m?.roughness ?? 0.45;
+      } else if (cat === 'stone' || name.includes('stone') || name.includes('marble') || name.includes('granite')) {
+        map = getMarbleTexture(2, 2);
+        roughness = m?.roughness ?? 0.25;
+      } else if (cat === 'tile' || name.includes('tile') || name.includes('slate') || name.includes('ceramic')) {
+        map = getTileTexture(m?.color ?? color, 4, 4);
+        roughness = m?.roughness ?? 0.35;
+      } else if (kind === 'wall' || cat === 'wall' || name.includes('wall') || name.includes('plaster')) {
+        bumpMap = getPlasterBumpTexture();
+        bumpScale = 0.0025;
+        roughness = m?.roughness ?? 0.88;
+      }
+
+      result = new THREE.MeshStandardMaterial({
+        color: m?.color ?? color,
+        roughness,
+        metalness,
+        opacity,
+        transparent: opacity < 1,
+        side: THREE.DoubleSide,
+        ...(map ? { map } : {}),
+        ...(bumpMap ? { bumpMap, bumpScale } : {})
+      });
       cache.set(key, result);
     }
     return result;
   }
+
+  // Architectural site ground plinth (procedural grass / map plot)
+  const geo = project.metadata?.geo;
+  const siteSize = 64;
+  const groundGeo = new THREE.BoxGeometry(siteSize, 0.4, siteSize);
+  const groundMat = new THREE.MeshStandardMaterial({
+    color: geo?.mapUnderlay ? '#ffffff' : '#223326',
+    roughness: 0.9,
+    metalness: 0.05,
+    map: geo?.mapUnderlay
+      ? getMapPlotTexture(geo.city, geo.latitude, geo.longitude, geo.northAngle)
+      : getLawnTexture(8),
+  });
+  const groundMesh = new THREE.Mesh(groundGeo, groundMat);
+  groundMesh.name = 'site_ground_plinth';
+  groundMesh.position.y = -0.32;
+  groundMesh.receiveShadow = true;
+  building.add(groundMesh);
+
   for (const room of views.rooms) {
     const shape = new THREE.Shape(room.polygon.map(p => new THREE.Vector2(p.x, -p.z)));
     const floor = views.floors.find(f => f.id === room.floorId)!;
-    const mesh = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: .12, bevelEnabled: false }), material(room.materials?.floor, '#c4b59f'));
+    const mesh = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: .12, bevelEnabled: false }), material(room.materials?.floor, '#c4b59f', 'floor'));
     mesh.rotation.x = -Math.PI / 2; mesh.position.y = floor.elevation - .12;
     mesh.receiveShadow = true; mesh.userData = { roomId: room.id, floorId: floor.id }; building.add(mesh);
   }
@@ -42,7 +102,7 @@ export function buildDesignScene(project: MoppleProject) {
     const group = new THREE.Group(); group.name = wall.id;
     group.position.set(wall.start.x, wall.baseElevation, wall.start.z); group.rotation.y = wall.rotationY;
     const room = views.rooms.find(r => r.boundary.some(e => e.wallId === wall.id));
-    const wallMaterial = material(wall.materialId ?? room?.materials?.wall);
+    const wallMaterial = material(wall.materialId ?? room?.materials?.wall, '#ded9cf', 'wall');
     function box(x0: number, x1: number, y0: number, y1: number, thickness: number, mat: THREE.Material, selectable = false) {
       if (x1 - x0 <= 1e-7 || y1 - y0 <= 1e-7) return;
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, y1 - y0, thickness), mat);

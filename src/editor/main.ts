@@ -12,6 +12,8 @@ import { Canvas2D, type SelectedEntity } from './canvas2d.ts';
 import { Canvas3D } from './canvas3d.ts';
 import { LayersPanel } from './layers.ts';
 import { PropertyPanel } from './properties.ts';
+import type { MoppleGeo } from '../project/schema.ts';
+import { WORLD_CITY_PRESETS, DEFAULT_GEO, GeolocationMapController } from './map.ts';
 
 const AUTOSAVE_STORAGE_KEY = 'mopple_editor_project';
 
@@ -377,11 +379,325 @@ export function initEditor() {
   document.getElementById('hud-view-iso')?.addEventListener('click', () => canvas3d?.setViewPreset('isometric'));
   document.getElementById('hud-view-top')?.addEventListener('click', () => canvas3d?.setViewPreset('top'));
 
+  // Solar Study HUD Elements
+  const solarPanel = document.getElementById('solar-study-panel') as HTMLElement | null;
+  const btnSolar = document.getElementById('btn-solar') as HTMLButtonElement | null;
+  const hudSolarToggle = document.getElementById('hud-solar-toggle') as HTMLButtonElement | null;
+  const solarCloseBtn = document.getElementById('solar-close-btn') as HTMLButtonElement | null;
+  const solarTimelapseBtn = document.getElementById('solar-timelapse-btn') as HTMLButtonElement | null;
+  const solarTimeSlider = document.getElementById('solar-time-slider') as HTMLInputElement | null;
+  const solarTimeLabel = document.getElementById('solar-time-label') as HTMLElement | null;
+  const solarClockDisplay = document.getElementById('solar-clock-display') as HTMLElement | null;
+  const solarPeriodBadge = document.getElementById('solar-period-badge') as HTMLElement | null;
+  const solarDateSlider = document.getElementById('solar-date-slider') as HTMLInputElement | null;
+  const solarDateLabel = document.getElementById('solar-date-label') as HTMLElement | null;
+  const solarHeliodonCheck = document.getElementById('solar-heliodon-check') as HTMLInputElement | null;
+  const solarElevationVal = document.getElementById('solar-elevation-val') as HTMLElement | null;
+  const solarAzimuthVal = document.getElementById('solar-azimuth-val') as HTMLElement | null;
+  const solarDaylightVal = document.getElementById('solar-daylight-val') as HTMLElement | null;
+  const solarLocVal = document.getElementById('solar-loc-val') as HTMLElement | null;
+
+  function formatClockTime(decimalHours: number): string {
+    const totalMinutes = Math.round(decimalHours * 60);
+    const hrs = Math.floor(totalMinutes / 60) % 24;
+    const mins = totalMinutes % 60;
+    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+  }
+
+  function updateSolarUI() {
+    if (!canvas3d) return;
+    const time = canvas3d.getSolarTime();
+    const metrics = canvas3d.getSolarMetrics();
+    const clockStr = formatClockTime(time);
+
+    if (solarClockDisplay) solarClockDisplay.textContent = clockStr;
+    if (solarTimeLabel) solarTimeLabel.textContent = clockStr;
+    if (solarTimeSlider) solarTimeSlider.value = time.toFixed(1);
+
+    if (solarPeriodBadge) {
+      if (metrics.isGoldenHour) {
+        solarPeriodBadge.textContent = 'Golden Hour';
+        solarPeriodBadge.style.color = '#ffb366';
+        solarPeriodBadge.style.background = 'rgba(255, 179, 102, 0.15)';
+      } else if (metrics.isDaylight) {
+        solarPeriodBadge.textContent = 'Daylight';
+        solarPeriodBadge.style.color = 'var(--mint)';
+        solarPeriodBadge.style.background = 'rgba(168, 232, 210, 0.15)';
+      } else if (metrics.elevationDeg > -6) {
+        solarPeriodBadge.textContent = 'Twilight';
+        solarPeriodBadge.style.color = '#99b3ff';
+        solarPeriodBadge.style.background = 'rgba(153, 179, 255, 0.15)';
+      } else {
+        solarPeriodBadge.textContent = 'Night';
+        solarPeriodBadge.style.color = '#738a9c';
+        solarPeriodBadge.style.background = 'rgba(115, 138, 156, 0.15)';
+      }
+    }
+
+    if (solarElevationVal) solarElevationVal.textContent = `${metrics.elevationDeg.toFixed(1)}°`;
+    if (solarAzimuthVal) solarAzimuthVal.textContent = `${metrics.azimuthDeg.toFixed(1)}°`;
+    if (solarDaylightVal) {
+      const rise = formatClockTime(metrics.sunriseHour);
+      const set = formatClockTime(metrics.sunsetHour);
+      solarDaylightVal.textContent = `${rise} — ${set}`;
+    }
+
+    const geo = engine.getGeo() ?? DEFAULT_GEO;
+    if (solarLocVal) {
+      solarLocVal.textContent = `${geo.city} (${(geo.northAngle ?? 0).toFixed(0)}°)`;
+    }
+  }
+
+  let isSolarOpen = false;
+  function toggleSolarPanel(open?: boolean) {
+    isSolarOpen = open ?? !isSolarOpen;
+    if (solarPanel) {
+      solarPanel.style.display = isSolarOpen ? 'flex' : 'none';
+      if (isSolarOpen) {
+        if (viewMode === '2d') setViewMode('split');
+        updateSolarUI();
+      }
+    }
+    btnSolar?.classList.toggle('active', isSolarOpen);
+    hudSolarToggle?.classList.toggle('active', isSolarOpen);
+  }
+
+  btnSolar?.addEventListener('click', () => toggleSolarPanel());
+  hudSolarToggle?.addEventListener('click', () => toggleSolarPanel());
+  solarCloseBtn?.addEventListener('click', () => toggleSolarPanel(false));
+
+  solarTimeSlider?.addEventListener('input', () => {
+    if (!canvas3d) return;
+    canvas3d.setSolarTime(parseFloat(solarTimeSlider.value));
+    updateSolarUI();
+  });
+
+  solarDateSlider?.addEventListener('input', () => {
+    if (!canvas3d) return;
+    const day = parseInt(solarDateSlider.value, 10);
+    const date = new Date(new Date().getFullYear(), 0, day);
+    canvas3d.setSolarDate(date);
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    let season = '';
+    if (day >= 79 && day <= 171) season = '(Spring)';
+    else if (day >= 172 && day <= 265) season = '(Summer)';
+    else if (day >= 266 && day <= 354) season = '(Autumn)';
+    else season = '(Winter)';
+    if (solarDateLabel) solarDateLabel.textContent = `${monthNames[date.getMonth()]} ${date.getDate()} ${season}`;
+    updateSolarUI();
+  });
+
+  solarHeliodonCheck?.addEventListener('change', () => {
+    canvas3d?.setHeliodonVisible(Boolean(solarHeliodonCheck?.checked));
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('.solar-pill-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!canvas3d) return;
+      const t = parseFloat(btn.dataset.time || '12');
+      canvas3d.setSolarTime(t);
+      updateSolarUI();
+    });
+  });
+
+  let isTimelapsePlaying = false;
+  solarTimelapseBtn?.addEventListener('click', () => {
+    if (!canvas3d) return;
+    isTimelapsePlaying = canvas3d.toggleTimelapse(() => {
+      updateSolarUI();
+    });
+    if (solarTimelapseBtn) {
+      solarTimelapseBtn.textContent = isTimelapsePlaying ? '⏸ Pause' : '▶ Play';
+    }
+  });
+
+  // Geolocation & Real Map Elements
+  const geoModal = document.getElementById('modal-geo') as HTMLElement;
+  const btnGeo = document.getElementById('btn-geo') as HTMLButtonElement | null;
+  const btnCloseGeo = document.getElementById('btn-close-geo') as HTMLButtonElement;
+  const btnCloseGeoX = document.getElementById('btn-close-geo-x') as HTMLButtonElement;
+  const btnSaveGeo = document.getElementById('btn-save-geo') as HTMLButtonElement;
+  const geoMapWrapper = document.getElementById('geo-map-wrapper') as HTMLElement | null;
+  const geoCitySelect = document.getElementById('geo-city-select') as HTMLSelectElement;
+  const geoLatInput = document.getElementById('geo-lat-input') as HTMLInputElement;
+  const geoLonInput = document.getElementById('geo-lon-input') as HTMLInputElement;
+  const geoAddressInput = document.getElementById('geo-address-input') as HTMLInputElement;
+  const geoNorthSlider = document.getElementById('geo-north-slider') as HTMLInputElement;
+  const geoNorthLabel = document.getElementById('geo-north-label') as HTMLElement;
+  const geoUnderlayCheck = document.getElementById('geo-underlay-check') as HTMLInputElement;
+
+  // Populate city presets in select
+  if (geoCitySelect) {
+    for (const city of WORLD_CITY_PRESETS) {
+      const opt = document.createElement('option');
+      opt.value = city.name;
+      opt.textContent = `${city.name}, ${city.country} (${city.timezone})`;
+      geoCitySelect.appendChild(opt);
+    }
+  }
+
+  let mapCanvas: HTMLCanvasElement | null = null;
+  let mapController: GeolocationMapController | null = null;
+
+  function ensureMapController() {
+    if (!geoMapWrapper) return;
+    if (!mapCanvas) {
+      mapCanvas = document.createElement('canvas');
+      mapCanvas.id = 'geo-map-canvas';
+      mapCanvas.className = 'geo-map-canvas';
+      mapCanvas.width = 460;
+      mapCanvas.height = 250;
+      geoMapWrapper.prepend(mapCanvas);
+    }
+    if (!mapController && mapCanvas) {
+      const initialGeo = engine.getGeo() ?? DEFAULT_GEO;
+      mapController = new GeolocationMapController(mapCanvas, initialGeo, updated => {
+        syncGeoInputs(updated);
+      });
+    }
+  }
+
+  function destroyMapController() {
+    if (mapCanvas) {
+      mapCanvas.remove();
+      mapCanvas = null;
+      mapController = null;
+    }
+  }
+
+  function getCardinalDirection(angle: number): string {
+    const a = ((angle % 360) + 360) % 360;
+    if (a >= 337.5 || a < 22.5) return 'Due North';
+    if (a >= 22.5 && a < 67.5) return 'North-East';
+    if (a >= 67.5 && a < 112.5) return 'Due East';
+    if (a >= 112.5 && a < 157.5) return 'South-East';
+    if (a >= 157.5 && a < 202.5) return 'Due South';
+    if (a >= 202.5 && a < 247.5) return 'South-West';
+    if (a >= 247.5 && a < 292.5) return 'Due West';
+    return 'North-West';
+  }
+
+  function syncGeoInputs(geo: MoppleGeo) {
+    if (geoLatInput) geoLatInput.value = geo.latitude.toFixed(4);
+    if (geoLonInput) geoLonInput.value = geo.longitude.toFixed(4);
+    if (geoAddressInput) geoAddressInput.value = geo.address || '';
+    if (geoNorthSlider) geoNorthSlider.value = String(geo.northAngle || 0);
+    if (geoNorthLabel) geoNorthLabel.textContent = `${geo.northAngle || 0}° (${getCardinalDirection(geo.northAngle || 0)})`;
+    if (geoUnderlayCheck) geoUnderlayCheck.checked = Boolean(geo.mapUnderlay);
+
+    if (geoCitySelect) {
+      const match = WORLD_CITY_PRESETS.find(p => p.name === geo.city);
+      geoCitySelect.value = match ? match.name : 'custom';
+    }
+  }
+
+  function openGeoModal() {
+    ensureMapController();
+    modalTrigger = document.activeElement as HTMLElement | null;
+    const current = engine.getGeo() ?? DEFAULT_GEO;
+    syncGeoInputs(current);
+    mapController?.setGeo(current);
+    geoModal.classList.add('show');
+    document.getElementById('editor-app')!.inert = true;
+    geoCitySelect?.focus();
+  }
+
+  function closeGeoModal() {
+    geoModal.classList.remove('show');
+    destroyMapController();
+    document.getElementById('editor-app')!.inert = false;
+    modalTrigger?.focus();
+  }
+
+  btnGeo?.addEventListener('click', openGeoModal);
+  btnCloseGeo?.addEventListener('click', closeGeoModal);
+  btnCloseGeoX?.addEventListener('click', closeGeoModal);
+  geoModal?.addEventListener('click', e => {
+    if (e.target === geoModal) closeGeoModal();
+  });
+  geoModal?.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.stopPropagation(); closeGeoModal(); }
+  });
+
+  geoCitySelect?.addEventListener('change', () => {
+    const val = geoCitySelect.value;
+    const preset = WORLD_CITY_PRESETS.find(p => p.name === val);
+    if (preset) {
+      const updated = {
+        ...mapController?.getGeo(),
+        city: preset.name,
+        latitude: preset.latitude,
+        longitude: preset.longitude,
+      };
+      mapController?.setGeo(updated);
+      syncGeoInputs(mapController?.getGeo() ?? updated);
+    }
+  });
+
+  geoLatInput?.addEventListener('input', () => {
+    const lat = parseFloat(geoLatInput.value);
+    if (!isNaN(lat)) {
+      mapController?.setGeo({ latitude: lat, city: 'Custom Site' });
+      if (geoCitySelect) geoCitySelect.value = 'custom';
+    }
+  });
+
+  geoLonInput?.addEventListener('input', () => {
+    const lon = parseFloat(geoLonInput.value);
+    if (!isNaN(lon)) {
+      mapController?.setGeo({ longitude: lon, city: 'Custom Site' });
+      if (geoCitySelect) geoCitySelect.value = 'custom';
+    }
+  });
+
+  geoNorthSlider?.addEventListener('input', () => {
+    const angle = parseInt(geoNorthSlider.value, 10);
+    mapController?.setGeo({ northAngle: angle });
+    if (geoNorthLabel) geoNorthLabel.textContent = `${angle}° (${getCardinalDirection(angle)})`;
+  });
+
+  document.querySelectorAll<HTMLElement>('.compass-tick').forEach(tick => {
+    tick.addEventListener('click', () => {
+      const angle = parseInt(tick.dataset.angle || '0', 10);
+      mapController?.setGeo({ northAngle: angle });
+      if (geoNorthSlider) geoNorthSlider.value = String(angle);
+      if (geoNorthLabel) geoNorthLabel.textContent = `${angle}° (${getCardinalDirection(angle)})`;
+    });
+  });
+
+  geoUnderlayCheck?.addEventListener('change', () => {
+    mapController?.setGeo({ mapUnderlay: geoUnderlayCheck.checked });
+  });
+
+  btnSaveGeo?.addEventListener('click', () => {
+    const finalGeo = mapController?.getGeo() ?? DEFAULT_GEO;
+    finalGeo.address = geoAddressInput?.value || finalGeo.address;
+    finalGeo.mapUnderlay = geoUnderlayCheck?.checked ?? false;
+    engine.updateGeo(finalGeo);
+    closeGeoModal();
+    updateSolarUI();
+    showStatus(`Site geolocation updated: ${finalGeo.city} (${finalGeo.latitude.toFixed(2)}°, ${finalGeo.longitude.toFixed(2)}°)`, 'success');
+  });
+
   // Global Keyboard Shortcuts
   window.addEventListener('keydown', e => {
     const target = e.target as HTMLElement;
-    if (apiKeyModal.classList.contains('show')) return;
+    if (apiKeyModal.classList.contains('show') || geoModal?.classList.contains('show')) return;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+      return;
+    }
+
+    // S: Toggle Solar Study
+    if (e.key.toLowerCase() === 's' && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault();
+      toggleSolarPanel();
+      return;
+    }
+
+    // G: Toggle Geolocation Modal
+    if (e.key.toLowerCase() === 'g' && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault();
+      openGeoModal();
       return;
     }
 

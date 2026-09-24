@@ -823,6 +823,308 @@ html, body {
   margin-top: 20px;
 }
 
+/* SOLAR STUDY FLOATING HUD */
+.solar-floating-hud {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 320px;
+  background: rgba(16, 21, 19, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.65);
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.solar-hud-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: rgba(22, 29, 26, 0.8);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.solar-hud-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.solar-hud-icon {
+  font-size: 14px;
+}
+
+.solar-hud-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.solar-btn-icon {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.solar-btn-icon:hover {
+  border-color: var(--mint);
+  color: var(--mint);
+}
+
+.solar-hud-body {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.solar-readout-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.solar-digital-clock {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.clock-time {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--mint);
+  letter-spacing: -0.02em;
+}
+
+.clock-period {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: rgba(168, 232, 210, 0.12);
+  color: var(--mint);
+  font-weight: 600;
+}
+
+.solar-quick-times {
+  display: flex;
+  gap: 4px;
+}
+
+.solar-pill-btn {
+  font-size: 10px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.solar-pill-btn:hover {
+  border-color: var(--mint);
+  color: var(--mint);
+}
+
+.solar-control-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.solar-slider-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.solar-val-text {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.solar-range {
+  width: 100%;
+  accent-color: var(--mint);
+  cursor: pointer;
+  height: 4px;
+  background: var(--bg-input);
+  border-radius: 2px;
+}
+
+.solar-options-row {
+  display: flex;
+  align-items: center;
+}
+
+.solar-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.solar-checkbox-label input[type="checkbox"] {
+  accent-color: var(--mint);
+  cursor: pointer;
+}
+
+.solar-metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  background: var(--bg-input);
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+}
+
+.solar-metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.solar-metric-card .metric-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.solar-metric-card .metric-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* GEOLOCATION REAL MAP MODAL */
+.modal-geo-card {
+  width: 760px;
+  max-width: calc(100vw - 32px);
+}
+
+.modal-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.modal-close-x {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.modal-close-x:hover {
+  color: var(--text-primary);
+}
+
+.geo-modal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.geo-map-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.geo-map-wrapper {
+  position: relative;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0d1210;
+}
+
+.geo-map-canvas {
+  width: 100%;
+  height: 250px;
+  display: block;
+  cursor: crosshair;
+}
+
+.geo-map-hint {
+  position: absolute;
+  bottom: 6px;
+  left: 8px;
+  font-size: 10px;
+  color: rgba(168, 232, 210, 0.7);
+  background: rgba(16, 21, 19, 0.85);
+  padding: 2px 6px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.geo-settings-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.prop-row-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.compass-quick-ticks {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.compass-tick {
+  font-size: 10px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.compass-tick:hover {
+  color: var(--mint);
+  background: rgba(168, 232, 210, 0.1);
+}
+
 /* Editor resilience: preserve the canvas, expose panels on small screens. */
 :root { --text-muted: #99aaa2; }
 #editor-app { height: 100dvh; }

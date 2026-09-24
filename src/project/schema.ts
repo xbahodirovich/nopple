@@ -49,6 +49,16 @@ export const lightSchema = z.discriminatedUnion('type', [
   z.strictObject({ id: idSchema, type: z.literal('directional'), color, intensity: nonnegative, position: vectorSchema, target: vectorSchema }),
   z.strictObject({ id: idSchema, type: z.literal('point'), color, intensity: nonnegative, position: vectorSchema, range: positive }),
 ]);
+export const geoSchema = z.strictObject({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  city: z.string().max(200).optional(),
+  address: z.string().max(500).optional(),
+  northAngle: z.number().min(0).max(360).optional(),
+  mapUnderlay: z.boolean().optional(),
+});
+export type MoppleGeo = z.infer<typeof geoSchema>;
+
 export const projectSchema = z.strictObject({
   format: z.literal(FORMAT), version: z.literal(CURRENT_VERSION),
   project: z.strictObject({
@@ -58,7 +68,11 @@ export const projectSchema = z.strictObject({
   building: z.strictObject({ floors: z.array(floorSchema), rooms: z.array(roomSchema), walls: z.array(wallSchema), doors: z.array(doorSchema), windows: z.array(windowSchema) }),
   interior: z.strictObject({ objects: z.array(objectSchema) }),
   materials: z.array(materialSchema), lighting: z.array(lightSchema),
-  metadata: z.strictObject({ description: z.string().max(4000).optional(), author: name.optional() }),
+  metadata: z.strictObject({
+    description: z.string().max(4000).optional(),
+    author: name.optional(),
+    geo: geoSchema.optional(),
+  }),
 });
 
 export type MoppleProject = z.infer<typeof projectSchema>;

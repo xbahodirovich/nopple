@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { doorSchema, floorSchema, idSchema, lightSchema, materialSchema, objectSchema, pointSchema, roomSchema, vectorSchema, wallSchema, windowSchema } from './schema.ts';
+import { doorSchema, floorSchema, geoSchema, idSchema, lightSchema, materialSchema, objectSchema, pointSchema, roomSchema, vectorSchema, wallSchema, windowSchema } from './schema.ts';
 import { MoppleValidationError } from './validation.ts';
 
 export const operationSchema = z.discriminatedUnion('type', [
@@ -24,6 +24,7 @@ export const operationSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('change_material'), material: materialSchema }),
   z.strictObject({ type: z.literal('change_room_style'), targetId: idSchema, style: z.string().trim().min(1).max(200) }),
   z.strictObject({ type: z.literal('update_lighting'), lights: z.array(lightSchema) }),
+  z.strictObject({ type: z.literal('update_geo'), geo: geoSchema }),
 ]);
 export const operationsSchema = z.strictObject({ operations: z.array(operationSchema).min(1).max(100) });
 export type MoppleOperation = z.infer<typeof operationSchema>;

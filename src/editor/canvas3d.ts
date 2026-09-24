@@ -5,6 +5,9 @@ import { distance } from '../project/geometry.ts';
 import type { MoppleInteriorObject, MoppleLight, MoppleMaterial, MoppleProject, MoppleWall } from '../project/schema.ts';
 import type { SelectedEntity } from './canvas2d.ts';
 import { createFurnitureMesh, getFurnitureFootprint } from './furniture.ts';
+import { ArchitecturalSkyDome } from './sky.ts';
+import { Heliodon3D, calculateSolarPosition, type SolarPosition } from './solar.ts';
+import { DEFAULT_GEO } from './map.ts';
 
 export interface Canvas3DOptions {
   engine: MoppleProjectEngine;
@@ -29,6 +32,16 @@ export class Canvas3D {
   private furnitureGroup = new THREE.Group();
   private lightingGroup = new THREE.Group();
   private selectionHelper = new THREE.Group();
+
+  // Solar & Sky
+  private skyDome: ArchitecturalSkyDome;
+  private heliodon: Heliodon3D;
+  private solarHour = 14; // 14:00 (2:00 PM) default afternoon light
+  private solarDate = new Date();
+  private heliodonVisible = false;
+  private timelapseInterval: ReturnType<typeof setInterval> | null = null;
+  private activeSunLight: THREE.DirectionalLight | null = null;
+  private activeAmbientLight: THREE.AmbientLight | null = null;
 
   // Materials cache
   private materialsMap = new Map<string, MoppleMaterial>();
@@ -85,6 +98,14 @@ export class Canvas3D {
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
     this.updateCameraPosition();
 
+    // Architectural Sky Dome & Heliodon Visualizer
+    this.skyDome = new ArchitecturalSkyDome(350);
+    this.scene.add(this.skyDome.mesh);
+
+    this.heliodon = new Heliodon3D(28);
+    this.scene.add(this.heliodon.group);
+    this.heliodon.setVisible(this.heliodonVisible);
+
     // Scene structure
     this.scene.add(this.buildingGroup);
     this.scene.add(this.furnitureGroup);
@@ -121,6 +142,9 @@ export class Canvas3D {
     if (this.disposed) return;
     this.disposed = true;
     this.events.abort();
+    this.stopTimelapse();
+    this.skyDome.dispose();
+    this.heliodon.dispose();
     this.visibilityObserver?.disconnect();
     disposeTree(this.scene);
     if (this.animationFrameId !== null) cancelAnimationFrame(this.animationFrameId);
@@ -349,7 +373,125 @@ export class Canvas3D {
     this.clearGroup(this.buildingGroup); this.clearGroup(this.furnitureGroup); this.clearGroup(this.lightingGroup);
     const next = buildDesignScene(this.project);
     this.buildingGroup.add(next.building); this.furnitureGroup.add(...[...next.furniture.children]); this.lightingGroup.add(next.lighting);
-    this.updateSelectionVisuals(); this.invalidate();
+
+    this.activeSunLight = (this.lightingGroup.getObjectByName('light_sun') as THREE.DirectionalLight) ||
+      (this.lightingGroup.children.find(c => c instanceof THREE.DirectionalLight) as THREE.DirectionalLight) || null;
+    this.activeAmbientLight = (this.lightingGroup.children.find(c => c instanceof THREE.AmbientLight) as THREE.AmbientLight) || null;
+
+    this.updateSolarLighting();
+    this.updateSelectionVisuals();
+    this.invalidate();
+  }
+
+  public setSolarTime(hours: number): void {
+    this.solarHour = Math.max(0, Math.min(24, hours));
+    this.updateSolarLighting();
+  }
+
+  public getSolarTime(): number {
+    return this.solarHour;
+  }
+
+  public setSolarDate(date: Date): void {
+    this.solarDate = date;
+    this.updateSolarLighting();
+  }
+
+  public getSolarDate(): Date {
+    return this.solarDate;
+  }
+
+  public setHeliodonVisible(visible: boolean): void {
+    this.heliodonVisible = visible;
+    this.heliodon.setVisible(visible);
+    if (visible) this.updateSolarLighting();
+    this.invalidate();
+  }
+
+  public isHeliodonVisible(): boolean {
+    return this.heliodonVisible;
+  }
+
+  public getSolarMetrics(): SolarPosition {
+    const geo = this.project.metadata?.geo ?? DEFAULT_GEO;
+    return calculateSolarPosition({
+      latitude: geo.latitude,
+      longitude: geo.longitude,
+      dayOfYear: this.getDayOfYear(this.solarDate),
+      timeHours: this.solarHour,
+      northAngle: geo.northAngle ?? 0
+    }, 45);
+  }
+
+  public toggleTimelapse(onTick?: (hour: number) => void): boolean {
+    if (this.timelapseInterval) {
+      this.stopTimelapse();
+      return false;
+    } else {
+      this.startTimelapse(onTick);
+      return true;
+    }
+  }
+
+  public startTimelapse(onTick?: (hour: number) => void): void {
+    this.stopTimelapse();
+    this.timelapseInterval = setInterval(() => {
+      let next = this.solarHour + 0.1;
+      if (next >= 24) next = 0;
+      this.setSolarTime(next);
+      onTick?.(next);
+    }, 40);
+  }
+
+  public stopTimelapse(): void {
+    if (this.timelapseInterval) {
+      clearInterval(this.timelapseInterval);
+      this.timelapseInterval = null;
+    }
+  }
+
+  private getDayOfYear(date: Date): number {
+    const start = new Date(date.getFullYear(), 0, 0);
+    const diff = (date.getTime() - start.getTime()) + ((start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000);
+    return Math.floor(diff / (1000 * 60 * 60 * 24));
+  }
+
+  private updateSolarLighting(): void {
+    const geo = this.project.metadata?.geo ?? DEFAULT_GEO;
+    const dayOfYear = this.getDayOfYear(this.solarDate);
+    const pos = calculateSolarPosition({
+      latitude: geo.latitude,
+      longitude: geo.longitude,
+      dayOfYear,
+      timeHours: this.solarHour,
+      northAngle: geo.northAngle ?? 0
+    }, 45);
+
+    if (this.activeSunLight) {
+      this.activeSunLight.position.copy(pos.sunPosition);
+      this.activeSunLight.color.copy(pos.sunColor);
+      this.activeSunLight.intensity = pos.sunIntensity;
+      this.activeSunLight.castShadow = pos.isDaylight;
+    }
+
+    if (this.activeAmbientLight) {
+      this.activeAmbientLight.color.copy(pos.ambientColor);
+      this.activeAmbientLight.intensity = pos.ambientIntensity;
+    }
+
+    this.skyDome.update(pos);
+
+    if (this.heliodonVisible) {
+      this.heliodon.updateSolarGuides({
+        latitude: geo.latitude,
+        longitude: geo.longitude,
+        dayOfYear,
+        timeHours: this.solarHour,
+        northAngle: geo.northAngle ?? 0
+      }, pos);
+    }
+
+    this.invalidate();
   }
   private clearGroup(group: THREE.Group) { disposeTree(group); }
 
