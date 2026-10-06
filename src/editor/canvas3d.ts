@@ -8,11 +8,13 @@ import { createFurnitureMesh, getFurnitureFootprint } from './furniture.ts';
 
 export interface Canvas3DOptions {
   engine: MoppleProjectEngine;
+  readOnly?: boolean;
   onSelect?: (entity: SelectedEntity | null) => void;
   onError?: (error: unknown) => void;
 }
 
 export class Canvas3D {
+  private readOnly = false;
   private container: HTMLElement;
   private engine: MoppleProjectEngine;
   private project: MoppleProject;
@@ -61,7 +63,13 @@ export class Canvas3D {
   private events = new AbortController();
   private onError: (error: unknown) => void;
 
+  screenshot(): Promise<Blob> {
+    this.renderer.render(this.scene, this.camera);
+    return new Promise((resolve,reject)=>this.renderer.domElement.toBlob(b=>b?resolve(b):reject(new Error('3D screenshot failed'))));
+  }
+
   constructor(container: HTMLElement, options: Canvas3DOptions) {
+    this.readOnly = options.readOnly ?? false;
     this.container = container;
     this.engine = options.engine;
     this.project = options.engine.getSnapshot();
@@ -201,6 +209,7 @@ export class Canvas3D {
       this.prevMouse = { x: e.clientX, y: e.clientY };
 
       el.setPointerCapture(e.pointerId);
+      if (this.readOnly) { this.isOrbiting = true; return; }
 
       // Right click or Shift+Left click: Pan
       if (e.button === 2 || (e.button === 0 && e.shiftKey)) {

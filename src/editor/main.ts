@@ -1,3 +1,5 @@
+import { shareHome } from '../alpha/projects.ts';
+import { exportPlan, download } from '../alpha/exporters.ts';
 import { saveHome } from '../alpha/projects.ts';
 import { errorMessage, labelControls, reportEditorError } from './ui.ts';
 import '@fontsource-variable/inter';
@@ -77,6 +79,10 @@ export function initEditor() {
   let canvas3d: Canvas3D | undefined;
   try { canvas3d = new Canvas3D(pane3D, { engine, onSelect: entity => handleSelect(entity), onError: reportEditorError }); }
   catch { pane3D.textContent = '3D is unavailable in this browser. You can continue editing in 2D.'; showStatus('WebGL is unavailable; 2D editing is still available.', 'error'); }
+
+  for (const format of ['png','pdf'] as const) document.getElementById(`export-${format}`)?.addEventListener('click',()=>{ void exportPlan(engine.getSnapshot(),format).catch(e=>showStatus(errorMessage(e),'error')); });
+  document.getElementById('export-3d')?.addEventListener('click',()=>{if(!canvas3d){showStatus('3D is unavailable in this browser.','error');return;}void canvas3d.screenshot().then(blob=>download(blob,'mopple-3d.png')).catch(e=>showStatus(errorMessage(e),'error'));});
+  document.getElementById('share-home')?.addEventListener('click',()=>{void shareHome(engine.getSnapshot()).then(async url=>{try{await navigator.clipboard.writeText(url);showStatus('Read-only share link copied.','success');}catch{const link=document.createElement('a');link.href=url;link.textContent='Open your share link';link.target='_blank';link.rel='noopener';document.querySelector('.workspace-tools')?.append(link);showStatus('Share link ready. Open it to copy the address.','success');}}).catch(e=>showStatus(errorMessage(e),'error'));});
 
   // 2. Instantiate Panels
   const layersPanel = new LayersPanel(layersContainer, {
