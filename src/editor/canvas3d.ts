@@ -1,13 +1,16 @@
+import { ArchitectureOverlay } from './architecture.ts';
+import { architectureMeasurements, exteriorCamera, exteriorViews, type ExteriorView } from '../project/measurements.ts';
 import { buildDesignScene, disposeTree } from './scene-design.ts';
 import * as THREE from 'three';
 import type { MoppleProjectEngine } from '../project/engine.ts';
-import { distance } from '../project/geometry.ts';
+import { distance, roomPolygon } from '../project/geometry.ts';
 import type { MoppleInteriorObject, MoppleLight, MoppleMaterial, MoppleProject, MoppleWall } from '../project/schema.ts';
 import type { SelectedEntity } from './canvas2d.ts';
 import { createFurnitureMesh, getFurnitureFootprint } from './furniture.ts';
 import { ArchitecturalSkyDome } from './sky.ts';
-import { Heliodon3D, calculateSolarPosition, type SolarPosition } from './solar.ts';
-import { DEFAULT_GEO } from './map.ts';
+import { DEFAULT_SUN, manualSolarPosition, Heliodon3D, calculateSolarPosition, type SolarPosition } from './solar.ts';
+import type { MoppleSun } from '../project/schema.ts';
+import { DEFAULT_GEO } from './site.ts';
 
 export interface Canvas3DOptions {
   engine: MoppleProjectEngine;
@@ -36,6 +39,7 @@ export class Canvas3D {
   // Solar & Sky
   private skyDome: ArchitecturalSkyDome;
   private heliodon: Heliodon3D;
+  private sunPreview: MoppleSun | null = null;
   private solarHour = 14; // 14:00 (2:00 PM) default afternoon light
   private solarDate = new Date();
   private heliodonVisible = false;
@@ -48,6 +52,9 @@ export class Canvas3D {
 
   // Selection
   private selected: SelectedEntity | null = null;
+  private roofVisible = true;
+  private activeFloor: string | null = null;
+  private dimensions: ArchitectureOverlay;
   private hoveredObjId: string | null = null;
 
   // Orbit camera state
@@ -112,9 +119,12 @@ export class Canvas3D {
     this.scene.add(this.lightingGroup);
     this.scene.add(this.selectionHelper);
 
+    this.dimensions = new ArchitectureOverlay(container);
+
     // Initial build
     this.syncMaterialsMap();
     this.rebuildScene();
+    this.resetCamera();
 
     // Input events
     this.setupEvents();
@@ -130,6 +140,7 @@ export class Canvas3D {
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(this.container);
     this.resize();
+    this.resetCamera();
 
     this.visibilityObserver = new IntersectionObserver(entries => { this.visible = entries[0].isIntersecting; if (this.visible) this.invalidate(); });
     this.visibilityObserver.observe(container);
@@ -152,6 +163,7 @@ export class Canvas3D {
     this.resizeObserver.disconnect();
     this.renderer.dispose();
     this.renderer.domElement.remove();
+    this.dimensions.element.remove();
   }
 
   public setSelection(entity: SelectedEntity | null) {
@@ -160,26 +172,117 @@ export class Canvas3D {
   }
 
   public resetCamera() {
-    const bounds = new THREE.Box3().setFromObject(this.buildingGroup);
+    const bounds = new THREE.Box3();
+    this.buildingGroup.updateWorldMatrix(true, true);
+    this.buildingGroup.traverseVisible(node => { if (node instanceof THREE.Mesh && node.name !== 'site_ground_plinth') bounds.expandByObject(node); });
     if (bounds.isEmpty()) { this.cameraTarget.set(0, .5, 0); this.cameraDistance = 14; }
     else {
       const sphere = bounds.getBoundingSphere(new THREE.Sphere());
       this.cameraTarget.copy(sphere.center);
-      const halfFov = Math.min(Math.PI / 8, Math.atan(Math.tan(Math.PI / 8) * this.camera.aspect));
+      const halfFov = Math.min(this.camera.fov * Math.PI / 360, Math.atan(Math.tan(this.camera.fov * Math.PI / 360) * this.camera.aspect));
       this.cameraDistance = Math.max(5, sphere.radius * 1.15 / Math.sin(halfFov));
     }
     this.cameraSpherical.set(this.cameraDistance, Math.PI / 3.5, Math.PI / 4); this.updateCameraPosition();
   }
 
-  public setViewPreset(preset: 'top' | 'isometric' | 'front') {
-    if (preset === 'top') {
-      this.cameraSpherical.set(this.cameraDistance, 0.05, 0);
-    } else if (preset === 'isometric') {
-      this.cameraSpherical.set(14, Math.PI / 3.5, Math.PI / 4);
-    } else if (preset === 'front') {
-      this.cameraSpherical.set(12, Math.PI / 2.2, 0);
+  public setViewPreset(preset: 'top' | 'isometric' | 'cutaway' | ExteriorView) {
+    this.setRoofVisible(preset !== 'top' && preset !== 'cutaway');
+    if (exteriorViews.includes(preset as ExteriorView)) {
+      const pose = exteriorCamera(this.project, preset as ExteriorView, this.camera.aspect);
+      this.camera.position.set(pose.position.x, pose.position.y, pose.position.z);
+      this.cameraTarget.set(pose.target.x, pose.target.y, pose.target.z);
+      this.camera.fov = pose.fov; this.camera.updateProjectionMatrix();
+      this.camera.lookAt(this.cameraTarget);
+      this.cameraSpherical.setFromVector3(this.camera.position.clone().sub(this.cameraTarget));
+      this.cameraDistance = this.cameraSpherical.radius;
+      this.invalidate(); return;
     }
+    this.camera.fov = 45; this.camera.updateProjectionMatrix();
+    this.resetCamera();
+    if (preset === 'top') this.cameraSpherical.set(this.cameraDistance, .01, 0);
     this.updateCameraPosition();
+  }
+
+  public setRoofVisible(visible: boolean) { this.roofVisible = visible; this.applyVisibility(); }
+  public setFloor(floorId: string | null) { this.activeFloor = floorId; this.applyVisibility(); this.refreshDimensions(); }
+  public setDimensionsVisible(visible: boolean) { this.dimensions.enabled = visible; this.refreshDimensions(); }
+
+  private applyVisibility() {
+    const activeFloor = this.project.building.floors.find(f => f.id === this.activeFloor);
+    if (!activeFloor) this.activeFloor = null;
+    this.buildingGroup.traverse(node => {
+      if (node.userData.floorId) node.visible = !this.activeFloor || node.userData.floorId === this.activeFloor;
+      if (node.userData.isRoof) node.visible = this.roofVisible && !this.activeFloor;
+      if (node.userData.isCeiling) node.visible = this.roofVisible && !this.activeFloor;
+    });
+    for (const node of this.furnitureGroup.children) {
+      const object = this.project.interior.objects.find(o => o.id === node.name);
+      const room = this.project.building.rooms.find(r => r.id === object?.roomId);
+      node.visible = !this.activeFloor || room?.floorId === this.activeFloor;
+    }
+    this.invalidate();
+  }
+
+  private refreshDimensions() {
+    this.dimensions.rows = architectureMeasurements(this.project).filter(row =>
+      (!this.activeFloor || !row.floorId || row.floorId === this.activeFloor) &&
+      (row.category === 'building' || row.entityId === this.selected?.id));
+    this.invalidate();
+  }
+
+  public setRoomCamera(roomId: string) {
+    const room = this.project.building.rooms.find(r => r.id === roomId);
+    if (!room) return;
+    const floor = this.project.building.floors.find(f => f.id === room.floorId);
+    const elev = floor?.elevation ?? 0;
+    const poly = roomPolygon(this.project, room);
+    if (poly.length === 0) return;
+    const xs = poly.map(p => p.x), zs = poly.map(p => p.z);
+    const minX = Math.min(...xs), maxX = Math.max(...xs), minZ = Math.min(...zs), maxZ = Math.max(...zs);
+    const centerX = (minX + maxX) / 2, centerZ = (minZ + maxZ) / 2;
+
+    const eyeHeight = elev + 1.6;
+    const eyeX = minX + (maxX - minX) * 0.25;
+    const eyeZ = minZ + (maxZ - minZ) * 0.3;
+
+    this.camera.position.set(eyeX, eyeHeight, eyeZ);
+    this.cameraTarget.set(centerX, elev + 1.3, centerZ);
+    this.camera.lookAt(this.cameraTarget);
+    this.invalidate();
+  }
+
+  public captureRoomView(roomId: string, width = 1280, height = 720): string {
+    if (!this.project.building.rooms.some(room => room.id === roomId)) throw new Error('Room no longer exists.');
+    return this.captureView(() => { this.setRoomCamera(roomId); this.camera.fov = 65; }, width, height);
+  }
+
+  public captureExteriorView(view: ExteriorView, width = 1280, height = 720): string {
+    return this.captureView(() => this.setViewPreset(view), width, height);
+  }
+
+  private captureView(position: () => void, width: number, height: number): string {
+    const previous = { position: this.camera.position.clone(), quaternion: this.camera.quaternion.clone(), target: this.cameraTarget.clone(), spherical: this.cameraSpherical.clone(), distance: this.cameraDistance, aspect: this.camera.aspect, fov: this.camera.fov, roof: this.roofVisible, floor: this.activeFloor, selection: this.selectionHelper.visible, heliodon: this.heliodon.group.visible };
+    const rendererSize = this.renderer.getSize(new THREE.Vector2());
+    const pixelRatio = this.renderer.getPixelRatio();
+    try {
+      this.activeFloor = null; this.setRoofVisible(true);
+      this.selectionHelper.visible = false; this.heliodon.group.visible = false;
+      this.camera.aspect = width / height;
+      position(); this.camera.updateProjectionMatrix();
+      // Reuse the viewport context: sharing shadow maps across temporary renderers
+      // corrupts the next viewport frame and exhausts browser WebGL contexts.
+      this.renderer.setPixelRatio(1); this.renderer.setSize(width, height, false);
+      this.renderer.render(this.scene, this.camera);
+      return this.renderer.domElement.toDataURL('image/png');
+    } finally {
+      this.renderer.setPixelRatio(pixelRatio); this.renderer.setSize(rendererSize.x, rendererSize.y, false);
+      this.camera.position.copy(previous.position); this.camera.quaternion.copy(previous.quaternion);
+      this.cameraTarget.copy(previous.target); this.cameraSpherical.copy(previous.spherical);
+      this.cameraDistance = previous.distance; this.camera.aspect = previous.aspect; this.camera.fov = previous.fov;
+      this.activeFloor = previous.floor; this.setRoofVisible(previous.roof);
+      this.selectionHelper.visible = previous.selection; this.heliodon.group.visible = previous.heliodon;
+      this.camera.updateProjectionMatrix(); this.invalidate();
+    }
   }
 
   private syncMaterialsMap() {
@@ -191,7 +294,7 @@ export class Canvas3D {
 
   private updateCameraPosition() {
     this.cameraSpherical.radius = this.cameraDistance;
-    this.cameraSpherical.phi = Math.max(0.01, Math.min(Math.PI / 2 - 0.02, this.cameraSpherical.phi));
+    this.cameraSpherical.phi = Math.max(0.01, Math.min(Math.PI - 0.02, this.cameraSpherical.phi));
     this.camera.position.setFromSpherical(this.cameraSpherical).add(this.cameraTarget);
     this.camera.lookAt(this.cameraTarget);
     this.invalidate();
@@ -203,7 +306,11 @@ export class Canvas3D {
     this.camera.aspect = rect.width / rect.height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(rect.width, rect.height, false);
-    this.resetCamera(); this.invalidate();
+    this.invalidate();
+  }
+
+  private isVisible(node: THREE.Object3D): boolean {
+    return node.visible && (!node.parent || this.isVisible(node.parent));
   }
 
   private setupEvents() {
@@ -236,7 +343,7 @@ export class Canvas3D {
       // Left click
       if (e.button === 0) {
         this.raycaster.setFromCamera(this.mouse, this.camera);
-        const intersects = this.raycaster.intersectObjects(this.furnitureGroup.children, true);
+        const intersects = this.raycaster.intersectObjects(this.furnitureGroup.children, true).filter(hit => this.isVisible(hit.object));
 
         if (intersects.length > 0) {
           let topGroup = intersects[0].object;
@@ -267,7 +374,7 @@ export class Canvas3D {
 
         // Check if wall clicked
         const wallIntersects = this.raycaster.intersectObjects(this.buildingGroup.children, true);
-        const wallHit = wallIntersects.find(i => i.object.userData?.wallId);
+        const wallHit = wallIntersects.find(i => i.object.userData?.wallId && this.isVisible(i.object));
         if (wallHit) {
           const wallId = wallHit.object.userData.wallId;
           this.selected = { type: 'wall', id: wallId };
@@ -370,14 +477,21 @@ export class Canvas3D {
   }
 
   private rebuildScene() {
+    this.sunPreview = null;
     this.clearGroup(this.buildingGroup); this.clearGroup(this.furnitureGroup); this.clearGroup(this.lightingGroup);
     const next = buildDesignScene(this.project);
     this.buildingGroup.add(next.building); this.furnitureGroup.add(...[...next.furniture.children]); this.lightingGroup.add(next.lighting);
 
     this.activeSunLight = (this.lightingGroup.getObjectByName('light_sun') as THREE.DirectionalLight) ||
       (this.lightingGroup.children.find(c => c instanceof THREE.DirectionalLight) as THREE.DirectionalLight) || null;
-    this.activeAmbientLight = (this.lightingGroup.children.find(c => c instanceof THREE.AmbientLight) as THREE.AmbientLight) || null;
+    this.activeAmbientLight = null;
+    this.lightingGroup.traverse(node => {
+      if (node instanceof THREE.DirectionalLight && !this.activeSunLight) this.activeSunLight = node;
+      if (node instanceof THREE.AmbientLight) this.activeAmbientLight = node;
+    });
+    if (!this.activeSunLight) { this.activeSunLight = new THREE.DirectionalLight(); this.lightingGroup.add(this.activeSunLight); }
 
+    this.applyVisibility();
     this.updateSolarLighting();
     this.updateSelectionVisuals();
     this.invalidate();
@@ -412,7 +526,11 @@ export class Canvas3D {
     return this.heliodonVisible;
   }
 
+  public previewSun(sun: MoppleSun): void { this.sunPreview = sun; this.updateSolarLighting(); }
+
   public getSolarMetrics(): SolarPosition {
+    const sun = this.sunPreview ?? this.project.metadata.sun ?? DEFAULT_SUN;
+    if (sun.mode === 'manual') return manualSolarPosition(sun);
     const geo = this.project.metadata?.geo ?? DEFAULT_GEO;
     return calculateSolarPosition({
       latitude: geo.latitude,
@@ -459,13 +577,7 @@ export class Canvas3D {
   private updateSolarLighting(): void {
     const geo = this.project.metadata?.geo ?? DEFAULT_GEO;
     const dayOfYear = this.getDayOfYear(this.solarDate);
-    const pos = calculateSolarPosition({
-      latitude: geo.latitude,
-      longitude: geo.longitude,
-      dayOfYear,
-      timeHours: this.solarHour,
-      northAngle: geo.northAngle ?? 0
-    }, 45);
+    const pos = this.getSolarMetrics();
 
     if (this.activeSunLight) {
       this.activeSunLight.position.copy(pos.sunPosition);
@@ -481,7 +593,8 @@ export class Canvas3D {
 
     this.skyDome.update(pos);
 
-    if (this.heliodonVisible) {
+    this.heliodon.setVisible(this.heliodonVisible && (this.sunPreview ?? this.project.metadata.sun ?? DEFAULT_SUN).mode === 'solar');
+    if (this.heliodon.group.visible) {
       this.heliodon.updateSolarGuides({
         latitude: geo.latitude,
         longitude: geo.longitude,
@@ -497,7 +610,7 @@ export class Canvas3D {
 
   private updateSelectionVisuals() {
     this.clearGroup(this.selectionHelper);
-    this.invalidate();
+    this.refreshDimensions();
 
     if (this.selected?.type === 'object') {
       const obj = this.project.interior.objects.find(o => o.id === this.selected?.id);
@@ -522,7 +635,10 @@ export class Canvas3D {
     if (this.disposed || this.animationFrameId !== null) return;
     this.animationFrameId = requestAnimationFrame(() => {
       this.animationFrameId = null;
-      if (!this.disposed && this.visible && !document.hidden && this.container.clientWidth && this.container.clientHeight) this.renderer.render(this.scene, this.camera);
+      if (!this.disposed && this.visible && !document.hidden && this.container.clientWidth && this.container.clientHeight) {
+        this.renderer.render(this.scene, this.camera);
+        this.dimensions.render(this.camera, this.container.clientWidth, this.container.clientHeight);
+      }
     });
   };
 }

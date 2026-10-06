@@ -1,4 +1,35 @@
 import * as THREE from 'three';
+import type { MoppleSun } from '../project/schema.ts';
+
+export const DEFAULT_SUN: MoppleSun = { mode: 'manual', azimuth: 225, elevation: 40, intensity: 2.8, warmth: 0.35, softness: 0.2 };
+
+/** Art-directed sunlight: azimuth clockwise from -Z (north), elevation above horizon. */
+export function manualSolarPosition(sun: MoppleSun, radius = 45): SolarPosition {
+  const azimuthDeg = ((sun.azimuth % 360) + 360) % 360;
+  const elevationDeg = Math.max(1, Math.min(90, sun.elevation));
+  const azimuthRad = azimuthDeg * Math.PI / 180, elevationRad = elevationDeg * Math.PI / 180;
+  const pos = calculateSolarPosition({ latitude: 0, longitude: 0, dayOfYear: 81, timeHours: 12, northAngle: 0 }, radius);
+  
+  const intensity = sun.intensity ?? 2.8;
+  const warmth = Math.max(0, Math.min(1, sun.warmth ?? 0.35));
+  const sunColor = new THREE.Color('#f2f7ff').lerp(new THREE.Color('#ffb366'), warmth);
+
+  return {
+    ...pos,
+    azimuthDeg,
+    azimuthRad,
+    elevationDeg,
+    elevationRad,
+    sunPosition: new THREE.Vector3(
+      radius * Math.cos(elevationRad) * Math.sin(azimuthRad),
+      radius * Math.sin(elevationRad),
+      -radius * Math.cos(elevationRad) * Math.cos(azimuthRad)
+    ),
+    sunColor,
+    sunIntensity: intensity,
+    isGoldenHour: elevationDeg <= 16 || warmth >= 0.7,
+  };
+}
 
 export interface SolarState {
   latitude: number;
@@ -169,6 +200,7 @@ export class Heliodon3D {
   private sunSphereMesh: THREE.Mesh;
   private sunRayLine: THREE.Line;
   private radius: number;
+  private lastArcKey = '';
 
   constructor(radius = 32) {
     this.radius = radius;
@@ -294,19 +326,30 @@ export class Heliodon3D {
     this.sunRayLine.computeLineDistances();
     this.sunRayLine.visible = solarPos.elevationDeg > 0;
 
-    // Rebuild Solstice & Equinox arcs
-    this.arcsGroup.clear();
+    // Rebuild Solstice & Equinox arcs only when date or location parameters change
+    const arcKey = `${state.latitude}:${state.longitude}:${state.dayOfYear}:${state.northAngle}`;
+    if (this.lastArcKey !== arcKey) {
+      this.lastArcKey = arcKey;
+      this.arcsGroup.traverse(child => {
+        if (child instanceof THREE.Line || child instanceof THREE.Mesh) {
+          child.geometry?.dispose();
+          if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+          else if (child.material) child.material.dispose();
+        }
+      });
+      this.arcsGroup.clear();
 
-    // 1. Summer solstice (Day 172)
-    this.arcsGroup.add(this.buildTrajectoryArc({ ...state, dayOfYear: 172 }, 0x937c42, 0.35, true));
-    // 2. Equinox (Day 80)
-    this.arcsGroup.add(this.buildTrajectoryArc({ ...state, dayOfYear: 80 }, 0x5a7566, 0.35, true));
-    // 3. Winter solstice (Day 355)
-    this.arcsGroup.add(this.buildTrajectoryArc({ ...state, dayOfYear: 355 }, 0x476378, 0.35, true));
+      // 1. Summer solstice (Day 172)
+      this.arcsGroup.add(this.buildTrajectoryArc({ ...state, dayOfYear: 172 }, 0x937c42, 0.35, true));
+      // 2. Equinox (Day 80)
+      this.arcsGroup.add(this.buildTrajectoryArc({ ...state, dayOfYear: 80 }, 0x5a7566, 0.35, true));
+      // 3. Winter solstice (Day 355)
+      this.arcsGroup.add(this.buildTrajectoryArc({ ...state, dayOfYear: 355 }, 0x476378, 0.35, true));
 
-    // 4. Today's active solar path arc (highlighted)
-    const todayArc = this.buildTrajectoryArc(state, 0xffd066, 0.85, false);
-    this.arcsGroup.add(todayArc);
+      // 4. Today's active solar path arc (highlighted)
+      const todayArc = this.buildTrajectoryArc(state, 0xffd066, 0.85, false);
+      this.arcsGroup.add(todayArc);
+    }
   }
 
   private buildTrajectoryArc(state: SolarState, colorHex: number, opacity: number, dashed: boolean): THREE.Line {

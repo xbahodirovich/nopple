@@ -179,3 +179,13 @@ test('API failure never falls back to a different edit; stale responses never ov
     assert.ok(e.getSnapshot().interior.objects.some(o => o.id === 'object_sofa'));
   } finally { globalThis.fetch = original; setStoredApiKey(''); }
 });
+
+test('new house requests cannot bypass the reviewed brief workflow', async () => {
+  const { executeAiPrompt, isHouseRequest } = await import('./ai.ts');
+  const engine = new MoppleProjectEngine(parseProject(example));
+  const before = engine.getSnapshot();
+  await assert.rejects(executeAiPrompt('make a new house', engine), /review the house brief/);
+  assert.deepEqual(engine.getSnapshot(), before);
+  assert.equal(isHouseRequest('Design a modern\n house for a family'), true);
+  assert.equal(isHouseRequest('make the house cozy'), false);
+});

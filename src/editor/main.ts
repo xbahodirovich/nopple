@@ -9,11 +9,16 @@ import type { MoppleInteriorObject } from '../project/schema.ts';
 import { parseProject } from '../project/validation.ts';
 import { executeAiPrompt, isHouseRequest, getStoredApiKey, getStoredModel, setStoredApiKey, setStoredModel } from './ai.ts';
 import { Canvas2D, type SelectedEntity } from './canvas2d.ts';
+import { createArchitectureControls } from './architecture.ts';
 import { Canvas3D } from './canvas3d.ts';
 import { LayersPanel } from './layers.ts';
 import { PropertyPanel } from './properties.ts';
-import type { MoppleGeo } from '../project/schema.ts';
-import { WORLD_CITY_PRESETS, DEFAULT_GEO, GeolocationMapController } from './map.ts';
+import { createGenerationPlan } from '../project/generation.ts';
+import { createBriefDialog } from './brief.ts';
+import { createRenderGalleryDialog } from './render-gallery.ts';
+import { DEFAULT_SUN } from './solar.ts';
+import type { MoppleSun } from '../project/schema.ts';
+import { DEFAULT_GEO } from './site.ts';
 
 const AUTOSAVE_STORAGE_KEY = 'mopple_editor_project';
 
@@ -78,6 +83,9 @@ export function initEditor() {
   let canvas3d: Canvas3D | undefined;
   try { canvas3d = new Canvas3D(pane3D, { engine, onSelect: entity => handleSelect(entity), onError: reportEditorError }); }
   catch { pane3D.textContent = '3D is unavailable in this browser. You can continue editing in 2D.'; showStatus('WebGL is unavailable; 2D editing is still available.', 'error'); }
+
+  const architectureControls = canvas3d ? createArchitectureControls(pane3D, engine, canvas3d, entity => handleSelect(entity)) : undefined;
+  if (architectureControls) cleanups.push(() => architectureControls.destroy());
 
   // 2. Instantiate Panels
   const layersPanel = new LayersPanel(layersContainer, {
@@ -301,12 +309,38 @@ export function initEditor() {
   aiEngineBadge?.addEventListener('click', () => openApiKeyModal());
   updateEngineBadge();
 
+  const houseBrief = createBriefDialog(engine, () => {
+    aiInput.value = ''; handleSelect(null); canvas2d.resetView(); canvas3d?.resetCamera();
+    showStatus('Starter floor plan and 3D concept created. Full requirements saved. Detailed architecture and interior images still need the full generator.', 'success');
+  });
+  const renderPlanButton = document.getElementById('btn-render-plan') as HTMLButtonElement;
+  function syncRenderPlan() { renderPlanButton.disabled = !engine.getSnapshot().metadata.designBrief; }
+  syncRenderPlan(); cleanups.push(engine.subscribe(syncRenderPlan));
+  renderPlanButton.addEventListener('click', () => {
+    try {
+      const plan = createGenerationPlan(engine.getSnapshot());
+      const url = URL.createObjectURL(new Blob([JSON.stringify(plan, null, 2)], { type: 'application/json' }));
+      const link = document.createElement('a'); link.href = url; link.download = 'mopple-generation-plan.json'; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) { reportEditorError(error); }
+  });
+  const briefDialog = houseBrief.dialog;
+  cleanups.push(() => houseBrief.destroy());
+  document.getElementById('btn-house-brief')?.addEventListener('click', () => { if (!aiBusy) houseBrief.open(); });
+
+  const renderGallery = createRenderGalleryDialog(engine, () => canvas3d);
+  cleanups.push(() => renderGallery.destroy());
+  document.getElementById('btn-open-gallery')?.addEventListener('click', () => {
+    if (!aiBusy) renderGallery.open();
+  });
+
   // One outstanding request; errors preserve input and never guess a fallback edit.
   let aiBusy = false;
   async function runAiPrompt(promptText: string) {
     if (aiBusy) return;
     const text = promptText.trim();
     if (!text) { showStatus('Enter a house description or a change to make.', 'error'); aiInput.focus(); return; }
+    if (isHouseRequest(text)) { houseBrief.open(text); return; }
     aiBusy = true; aiSubmit.disabled = true;
     document.querySelectorAll<HTMLButtonElement>('.ai-chip').forEach(b => b.disabled = true);
     showStatus(getStoredApiKey() ? `Asking ${getStoredModel()}…` : 'Applying offline design command…', 'loading');
@@ -315,11 +349,11 @@ export function initEditor() {
       showStatus(result.message, 'success'); aiInput.value = ''; handleSelect(null);
       if (isHouseRequest(text)) { canvas2d.resetView(); canvas3d?.resetCamera(); }
     } catch (error) { showStatus(errorMessage(error), 'error'); }
-    finally { aiBusy = false; aiSubmit.disabled = false; document.querySelectorAll<HTMLButtonElement>('.ai-chip').forEach(b => b.disabled = false); }
+    finally { aiBusy = false; aiSubmit.disabled = false; document.querySelectorAll<HTMLButtonElement>('.ai-chip').forEach(b => b.disabled = false); syncRenderPlan(); }
   }
   aiSubmit.addEventListener('click', () => void runAiPrompt(aiInput.value));
   aiInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); void runAiPrompt(aiInput.value); } });
-  document.querySelectorAll<HTMLButtonElement>('.ai-chip').forEach(chip => chip.addEventListener('click', () => {
+  document.querySelectorAll<HTMLButtonElement>('.ai-chip[data-prompt]').forEach(chip => chip.addEventListener('click', () => {
     aiInput.value = chip.dataset.prompt || ''; void runAiPrompt(aiInput.value);
   }));
 
@@ -376,8 +410,9 @@ export function initEditor() {
     canvas2d.resetView();
     canvas3d?.resetCamera();
   });
-  document.getElementById('hud-view-iso')?.addEventListener('click', () => canvas3d?.setViewPreset('isometric'));
-  document.getElementById('hud-view-top')?.addEventListener('click', () => canvas3d?.setViewPreset('top'));
+  document.getElementById('hud-view-iso')?.addEventListener('click', () => { canvas3d?.setViewPreset('isometric'); architectureControls?.setView('isometric'); });
+  document.getElementById('hud-view-top')?.addEventListener('click', () => { canvas3d?.setViewPreset('top'); architectureControls?.setView('top'); });
+  document.getElementById('hud-view-cutaway')?.addEventListener('click', () => { canvas3d?.setViewPreset('cutaway'); architectureControls?.setView('cutaway'); });
 
   // Solar Study HUD Elements
   const solarPanel = document.getElementById('solar-study-panel') as HTMLElement | null;
@@ -397,6 +432,63 @@ export function initEditor() {
   const solarDaylightVal = document.getElementById('solar-daylight-val') as HTMLElement | null;
   const solarLocVal = document.getElementById('solar-loc-val') as HTMLElement | null;
 
+  const sunMode = document.getElementById('sun-mode') as HTMLSelectElement;
+  const sunAzimuth = document.getElementById('sun-azimuth') as HTMLInputElement;
+  const sunElevation = document.getElementById('sun-elevation') as HTMLInputElement;
+  const sunWarmth = document.getElementById('sun-warmth') as HTMLInputElement | null;
+  const sunIntensity = document.getElementById('sun-intensity') as HTMLInputElement | null;
+  const sunWarmthVal = document.getElementById('sun-warmth-value') as HTMLElement | null;
+  const sunIntensityVal = document.getElementById('sun-intensity-value') as HTMLElement | null;
+
+  function readSun(): MoppleSun {
+    return {
+      mode: sunMode.value as MoppleSun['mode'],
+      azimuth: Number(sunAzimuth.value),
+      elevation: Number(sunElevation.value),
+      warmth: sunWarmth ? Math.round((Number(sunWarmth.value) / 100) * 100) / 100 : undefined,
+      intensity: sunIntensity ? Number(sunIntensity.value) : undefined,
+    };
+  }
+
+  function syncSun(sun = engine.getSnapshot().metadata.sun ?? DEFAULT_SUN) {
+    sunMode.value = sun.mode;
+    sunAzimuth.value = String(sun.azimuth);
+    sunElevation.value = String(sun.elevation);
+    const warmthPercent = Math.round((sun.warmth ?? DEFAULT_SUN.warmth ?? 0.35) * 100);
+    const intensityVal = sun.intensity ?? DEFAULT_SUN.intensity ?? 2.8;
+    if (sunWarmth) sunWarmth.value = String(warmthPercent);
+    if (sunIntensity) sunIntensity.value = String(intensityVal);
+    document.getElementById('sun-azimuth-value')!.textContent = `${sun.azimuth}°`;
+    document.getElementById('sun-elevation-value')!.textContent = `${sun.elevation}°`;
+    if (sunWarmthVal) sunWarmthVal.textContent = `${warmthPercent}%`;
+    if (sunIntensityVal) sunIntensityVal.textContent = `${intensityVal.toFixed(1)}`;
+    const manual = sun.mode === 'manual';
+    sunAzimuth.disabled = !manual;
+    sunElevation.disabled = !manual;
+    if (sunWarmth) sunWarmth.disabled = !manual;
+    if (sunIntensity) sunIntensity.disabled = !manual;
+    for (const el of [solarTimeSlider, solarDateSlider, solarTimelapseBtn, solarHeliodonCheck]) if (el) el.disabled = manual;
+    document.querySelectorAll<HTMLButtonElement>('.solar-pill-btn').forEach(button => button.disabled = manual);
+    document.querySelectorAll<HTMLElement>('.solar-readout-row, [data-solar-auto]').forEach(element => element.hidden = manual);
+    updateSolarUI();
+  }
+
+  const sunSliders = [sunAzimuth, sunElevation];
+  if (sunWarmth) sunSliders.push(sunWarmth);
+  if (sunIntensity) sunSliders.push(sunIntensity);
+
+  for (const slider of sunSliders) {
+    slider.addEventListener('input', () => { const sun = readSun(); canvas3d?.previewSun(sun); syncSun(sun); });
+    slider.addEventListener('change', () => engine.applyOperations({ operations: [{ type: 'update_sun', sun: readSun() }] }));
+  }
+  sunMode.addEventListener('change', () => {
+    canvas3d?.stopTimelapse();
+    if (solarTimelapseBtn) solarTimelapseBtn.textContent = '▶ Play';
+    engine.applyOperations({ operations: [{ type: 'update_sun', sun: readSun() }] });
+  });
+  cleanups.push(engine.subscribe(() => syncSun()));
+  syncSun();
+
   function formatClockTime(decimalHours: number): string {
     const totalMinutes = Math.round(decimalHours * 60);
     const hrs = Math.floor(totalMinutes / 60) % 24;
@@ -410,7 +502,7 @@ export function initEditor() {
     const metrics = canvas3d.getSolarMetrics();
     const clockStr = formatClockTime(time);
 
-    if (solarClockDisplay) solarClockDisplay.textContent = clockStr;
+    if (solarClockDisplay) solarClockDisplay.textContent = sunMode.value === 'manual' ? 'Manual' : clockStr;
     if (solarTimeLabel) solarTimeLabel.textContent = clockStr;
     if (solarTimeSlider) solarTimeSlider.value = time.toFixed(1);
 
@@ -439,12 +531,12 @@ export function initEditor() {
     if (solarDaylightVal) {
       const rise = formatClockTime(metrics.sunriseHour);
       const set = formatClockTime(metrics.sunsetHour);
-      solarDaylightVal.textContent = `${rise} — ${set}`;
+      solarDaylightVal.textContent = sunMode.value === 'manual' ? 'Manual light' : `${rise} — ${set}`;
     }
 
     const geo = engine.getGeo() ?? DEFAULT_GEO;
     if (solarLocVal) {
-      solarLocVal.textContent = `${geo.city} (${(geo.northAngle ?? 0).toFixed(0)}°)`;
+      solarLocVal.textContent = sunMode.value === 'manual' ? 'Scene compass' : `${geo.city ?? 'Imported site'} (solar time)`;
     }
   }
 
@@ -511,178 +603,10 @@ export function initEditor() {
     }
   });
 
-  // Geolocation & Real Map Elements
-  const geoModal = document.getElementById('modal-geo') as HTMLElement;
-  const btnGeo = document.getElementById('btn-geo') as HTMLButtonElement | null;
-  const btnCloseGeo = document.getElementById('btn-close-geo') as HTMLButtonElement;
-  const btnCloseGeoX = document.getElementById('btn-close-geo-x') as HTMLButtonElement;
-  const btnSaveGeo = document.getElementById('btn-save-geo') as HTMLButtonElement;
-  const geoMapWrapper = document.getElementById('geo-map-wrapper') as HTMLElement | null;
-  const geoCitySelect = document.getElementById('geo-city-select') as HTMLSelectElement;
-  const geoLatInput = document.getElementById('geo-lat-input') as HTMLInputElement;
-  const geoLonInput = document.getElementById('geo-lon-input') as HTMLInputElement;
-  const geoAddressInput = document.getElementById('geo-address-input') as HTMLInputElement;
-  const geoNorthSlider = document.getElementById('geo-north-slider') as HTMLInputElement;
-  const geoNorthLabel = document.getElementById('geo-north-label') as HTMLElement;
-  const geoUnderlayCheck = document.getElementById('geo-underlay-check') as HTMLInputElement;
-
-  // Populate city presets in select
-  if (geoCitySelect) {
-    for (const city of WORLD_CITY_PRESETS) {
-      const opt = document.createElement('option');
-      opt.value = city.name;
-      opt.textContent = `${city.name}, ${city.country} (${city.timezone})`;
-      geoCitySelect.appendChild(opt);
-    }
-  }
-
-  let mapCanvas: HTMLCanvasElement | null = null;
-  let mapController: GeolocationMapController | null = null;
-
-  function ensureMapController() {
-    if (!geoMapWrapper) return;
-    if (!mapCanvas) {
-      mapCanvas = document.createElement('canvas');
-      mapCanvas.id = 'geo-map-canvas';
-      mapCanvas.className = 'geo-map-canvas';
-      mapCanvas.width = 460;
-      mapCanvas.height = 250;
-      geoMapWrapper.prepend(mapCanvas);
-    }
-    if (!mapController && mapCanvas) {
-      const initialGeo = engine.getGeo() ?? DEFAULT_GEO;
-      mapController = new GeolocationMapController(mapCanvas, initialGeo, updated => {
-        syncGeoInputs(updated);
-      });
-    }
-  }
-
-  function destroyMapController() {
-    if (mapCanvas) {
-      mapCanvas.remove();
-      mapCanvas = null;
-      mapController = null;
-    }
-  }
-
-  function getCardinalDirection(angle: number): string {
-    const a = ((angle % 360) + 360) % 360;
-    if (a >= 337.5 || a < 22.5) return 'Due North';
-    if (a >= 22.5 && a < 67.5) return 'North-East';
-    if (a >= 67.5 && a < 112.5) return 'Due East';
-    if (a >= 112.5 && a < 157.5) return 'South-East';
-    if (a >= 157.5 && a < 202.5) return 'Due South';
-    if (a >= 202.5 && a < 247.5) return 'South-West';
-    if (a >= 247.5 && a < 292.5) return 'Due West';
-    return 'North-West';
-  }
-
-  function syncGeoInputs(geo: MoppleGeo) {
-    if (geoLatInput) geoLatInput.value = geo.latitude.toFixed(4);
-    if (geoLonInput) geoLonInput.value = geo.longitude.toFixed(4);
-    if (geoAddressInput) geoAddressInput.value = geo.address || '';
-    if (geoNorthSlider) geoNorthSlider.value = String(geo.northAngle || 0);
-    if (geoNorthLabel) geoNorthLabel.textContent = `${geo.northAngle || 0}° (${getCardinalDirection(geo.northAngle || 0)})`;
-    if (geoUnderlayCheck) geoUnderlayCheck.checked = Boolean(geo.mapUnderlay);
-
-    if (geoCitySelect) {
-      const match = WORLD_CITY_PRESETS.find(p => p.name === geo.city);
-      geoCitySelect.value = match ? match.name : 'custom';
-    }
-  }
-
-  function openGeoModal() {
-    ensureMapController();
-    modalTrigger = document.activeElement as HTMLElement | null;
-    const current = engine.getGeo() ?? DEFAULT_GEO;
-    syncGeoInputs(current);
-    mapController?.setGeo(current);
-    geoModal.classList.add('show');
-    document.getElementById('editor-app')!.inert = true;
-    geoCitySelect?.focus();
-  }
-
-  function closeGeoModal() {
-    geoModal.classList.remove('show');
-    destroyMapController();
-    document.getElementById('editor-app')!.inert = false;
-    modalTrigger?.focus();
-  }
-
-  btnGeo?.addEventListener('click', openGeoModal);
-  btnCloseGeo?.addEventListener('click', closeGeoModal);
-  btnCloseGeoX?.addEventListener('click', closeGeoModal);
-  geoModal?.addEventListener('click', e => {
-    if (e.target === geoModal) closeGeoModal();
-  });
-  geoModal?.addEventListener('keydown', event => {
-    if (event.key === 'Escape') { event.stopPropagation(); closeGeoModal(); }
-  });
-
-  geoCitySelect?.addEventListener('change', () => {
-    const val = geoCitySelect.value;
-    const preset = WORLD_CITY_PRESETS.find(p => p.name === val);
-    if (preset) {
-      const updated = {
-        ...mapController?.getGeo(),
-        city: preset.name,
-        latitude: preset.latitude,
-        longitude: preset.longitude,
-      };
-      mapController?.setGeo(updated);
-      syncGeoInputs(mapController?.getGeo() ?? updated);
-    }
-  });
-
-  geoLatInput?.addEventListener('input', () => {
-    const lat = parseFloat(geoLatInput.value);
-    if (!isNaN(lat)) {
-      mapController?.setGeo({ latitude: lat, city: 'Custom Site' });
-      if (geoCitySelect) geoCitySelect.value = 'custom';
-    }
-  });
-
-  geoLonInput?.addEventListener('input', () => {
-    const lon = parseFloat(geoLonInput.value);
-    if (!isNaN(lon)) {
-      mapController?.setGeo({ longitude: lon, city: 'Custom Site' });
-      if (geoCitySelect) geoCitySelect.value = 'custom';
-    }
-  });
-
-  geoNorthSlider?.addEventListener('input', () => {
-    const angle = parseInt(geoNorthSlider.value, 10);
-    mapController?.setGeo({ northAngle: angle });
-    if (geoNorthLabel) geoNorthLabel.textContent = `${angle}° (${getCardinalDirection(angle)})`;
-  });
-
-  document.querySelectorAll<HTMLElement>('.compass-tick').forEach(tick => {
-    tick.addEventListener('click', () => {
-      const angle = parseInt(tick.dataset.angle || '0', 10);
-      mapController?.setGeo({ northAngle: angle });
-      if (geoNorthSlider) geoNorthSlider.value = String(angle);
-      if (geoNorthLabel) geoNorthLabel.textContent = `${angle}° (${getCardinalDirection(angle)})`;
-    });
-  });
-
-  geoUnderlayCheck?.addEventListener('change', () => {
-    mapController?.setGeo({ mapUnderlay: geoUnderlayCheck.checked });
-  });
-
-  btnSaveGeo?.addEventListener('click', () => {
-    const finalGeo = mapController?.getGeo() ?? DEFAULT_GEO;
-    finalGeo.address = geoAddressInput?.value || finalGeo.address;
-    finalGeo.mapUnderlay = geoUnderlayCheck?.checked ?? false;
-    engine.updateGeo(finalGeo);
-    closeGeoModal();
-    updateSolarUI();
-    showStatus(`Site geolocation updated: ${finalGeo.city} (${finalGeo.latitude.toFixed(2)}°, ${finalGeo.longitude.toFixed(2)}°)`, 'success');
-  });
-
   // Global Keyboard Shortcuts
   window.addEventListener('keydown', e => {
     const target = e.target as HTMLElement;
-    if (apiKeyModal.classList.contains('show') || geoModal?.classList.contains('show')) return;
+    if (apiKeyModal.classList.contains('show') || briefDialog.open || renderGallery.dialog.open) return;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
       return;
     }
@@ -691,13 +615,6 @@ export function initEditor() {
     if (e.key.toLowerCase() === 's' && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
       toggleSolarPanel();
-      return;
-    }
-
-    // G: Toggle Geolocation Modal
-    if (e.key.toLowerCase() === 'g' && !e.metaKey && !e.ctrlKey) {
-      e.preventDefault();
-      openGeoModal();
       return;
     }
 

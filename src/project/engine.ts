@@ -92,6 +92,8 @@ function apply(p: MoppleProject, op: MoppleOperation) {
     }
     case 'change_room_style': find(b.rooms, op.targetId).style = op.style; break;
     case 'update_lighting': p.lighting = op.lights; break;
+    case 'update_sun': p.metadata.sun = op.sun; break;
+    case 'update_design_brief': p.metadata.designBrief = op.brief; break;
     case 'update_geo': p.metadata.geo = op.geo; break;
     default: { const exhaustive: never = op; return exhaustive; }
   }

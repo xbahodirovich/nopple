@@ -18,6 +18,8 @@ export const DEFAULT_FURNITURE_SIZES: Record<MoppleInteriorObject['kind'], { wid
   lamp: { width: 0.45, height: 1.5, depth: 0.45 },
   appliance: { width: 0.9, height: 0.9, depth: 0.65 },
   decoration: { width: 0.5, height: 0.7, depth: 0.5 },
+  stairs: { width: 1.2, height: 2.8, depth: 3.2 },
+  fixture: { width: 1.2, height: 0.85, depth: 0.6 },
 };
 
 export function getFurnitureFootprint(obj: MoppleInteriorObject): FurnitureFootprint {
@@ -33,6 +35,8 @@ export function getFurnitureFootprint(obj: MoppleInteriorObject): FurnitureFootp
     lamp: '#d4b35d',
     appliance: '#586b68',
     decoration: '#75947b',
+    stairs: '#8a7b6b',
+    fixture: '#6a827f',
   };
   return {
     width,
@@ -214,6 +218,40 @@ export function createFurnitureMesh(
       break;
     }
 
+    case 'stairs': {
+      // Architectural staircase: 12 steps climbing from y=0 to y=2.8m along Z axis
+      const stepCount = 12;
+      const stepWidth = 1.1;
+      const stepHeight = 2.8 / stepCount;
+      const stepDepth = 3.0 / stepCount;
+      const stairMat = getMaterial('wood', '#a8947e', 0.6, 0.05);
+      const railMat = getMaterial('metal', '#2b2a28', 0.3, 0.8);
+
+      for (let s = 0; s < stepCount; s++) {
+        const sy = (s + 0.5) * stepHeight;
+        const sz = -1.5 + (s + 0.5) * stepDepth;
+        addPart(boxGeo, stairMat, [0, sy, sz], [stepWidth, stepHeight, stepDepth]);
+      }
+      // Stringers / handrail
+      addPart(boxGeo, railMat, [-stepWidth / 2 + 0.04, 1.8, 0], [0.04, 0.9, 3.2]);
+      addPart(boxGeo, railMat, [stepWidth / 2 - 0.04, 1.8, 0], [0.04, 0.9, 3.2]);
+      break;
+    }
+
+    case 'fixture': {
+      // Bathroom vanity unit with washbasin, mirror & tap
+      const vanityMat = getMaterial('stone', '#dcd8d0', 0.4, 0.1);
+      const basinMat = getMaterial('ceramic', '#ffffff', 0.2, 0.0);
+      const mirrorMat = getMaterial('glass', '#a8c6be', 0.05, 0.9);
+      // Cabinet base
+      addPart(boxGeo, vanityMat, [0, 0.42, 0], [1.1, 0.84, 0.55]);
+      // Basin sink
+      addPart(cylGeo, basinMat, [0, 0.85, 0], [0.45, 0.04, 0.35]);
+      // Mirror above
+      addPart(boxGeo, mirrorMat, [0, 1.45, -0.24], [0.9, 0.8, 0.03]);
+      break;
+    }
+
     default: {
       addPart(boxGeo, darkMat, [0, 0.4, 0], [0.8, 0.8, 0.8]);
       break;
@@ -297,6 +335,24 @@ export function drawFurniture2D(
     ctx.beginPath();
     ctx.arc(-hw * 0.4, 0, Math.min(hw, hd) * 0.3, 0, Math.PI * 2);
     ctx.arc(hw * 0.4, 0, Math.min(hw, hd) * 0.3, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (obj.kind === 'stairs') {
+    // 2D architectural stairs lines & climbing arrow
+    ctx.beginPath();
+    const steps = 10;
+    for (let s = 1; s < steps; s++) {
+      const z = -hd + (s / steps) * (2 * hd);
+      ctx.moveTo(-hw, z);
+      ctx.lineTo(hw, z);
+    }
+    // Up arrow line
+    ctx.moveTo(0, -hd + 0.2);
+    ctx.lineTo(0, hd - 0.2);
+    ctx.stroke();
+  } else if (obj.kind === 'fixture') {
+    // Bathroom basin oval
+    ctx.beginPath();
+    ctx.ellipse(0, 0, hw * 0.6, hd * 0.5, 0, 0, Math.PI * 2);
     ctx.stroke();
   }
 

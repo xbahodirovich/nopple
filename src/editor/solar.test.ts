@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { calculateSolarPosition, Heliodon3D } from './solar.ts';
-import { WORLD_CITY_PRESETS, DEFAULT_GEO } from './map.ts';
+import { WORLD_CITY_PRESETS, DEFAULT_GEO } from './site.ts';
 import { MoppleProjectEngine } from '../project/engine.ts';
 import { parseProject } from '../project/validation.ts';
 import {
@@ -10,7 +10,6 @@ import {
   getTileTexture,
   getPlasterBumpTexture,
   getLawnTexture,
-  getMapPlotTexture,
 } from './textures.ts';
 import { readFileSync } from 'node:fs';
 
@@ -127,6 +126,15 @@ test('procedural textures execute safely without DOM in Node environment', () =>
   assert.ok(plaster);
   const lawn = getLawnTexture();
   assert.ok(lawn);
-  const mapPlot = getMapPlotTexture('Test Site', 40.7, -74.0, 30);
-  assert.ok(mapPlot);
+});
+
+test('manual sunlight follows compass directions and elevation independently of date', async () => {
+  const { manualSolarPosition } = await import('./solar.ts');
+  const north = manualSolarPosition({ mode: 'manual', azimuth: 0, elevation: 30 });
+  const east = manualSolarPosition({ mode: 'manual', azimuth: 90, elevation: 30 });
+  assert.ok(north.sunPosition.z < 0 && Math.abs(north.sunPosition.x) < 1e-8);
+  assert.ok(east.sunPosition.x > 0 && Math.abs(east.sunPosition.z) < 1e-8);
+  assert.ok(Math.abs(east.sunPosition.y - 22.5) < 1e-8);
+  assert.equal(east.isDaylight, true);
+  assert.ok(manualSolarPosition({ mode: 'manual', azimuth: 90, elevation: 80 }).sunPosition.y > east.sunPosition.y);
 });

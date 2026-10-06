@@ -105,7 +105,7 @@ Openings must fit entirely within their wall and cannot overlap another opening 
 
 ## Interior, materials and lighting
 
-Interior objects contain `id`, `assetId`, `roomId`, `kind`, `position`, `rotation`, `scale`, and optional `materialOverrides: [{slot, materialId}]`. Kinds: `sofa`, `bed`, `table`, `chair`, `cabinet`, `lamp`, `decoration`, `appliance`. Override slot names must be unique per object. Asset resolution and checking that slots exist happen in a future asset registry; unresolved assets should render a placeholder. No model data or executable asset URLs are stored in the file.
+Interior objects contain `id`, `assetId`, `roomId`, `kind`, `position`, `rotation`, `scale`, and optional `materialOverrides: [{slot, materialId}]`. Kinds: `sofa`, `bed`, `table`, `chair`, `cabinet`, `lamp`, `decoration`, `appliance`, `stairs`, `fixture`. Override slot names must be unique per object. Asset resolution and checking that slots exist happen in a future asset registry; unresolved assets should render a placeholder. No model data or executable asset URLs are stored in the file.
 
 ```json
 {
@@ -171,7 +171,7 @@ An AI provider submits structured data to `applyOperations(unknown)`. Ordinary e
 | Operation | Payload beyond `type` |
 | --- | --- |
 | `rename_project` | `name` |
-| `create_house` | `area` (40–600 m²), integer `bedrooms` (1–8), integer `bathrooms` (1–5), `style` |
+| `create_house` | `area` (40–600 m²), integer `bedrooms` (1–8), integer `bathrooms` (1–5), `style`, optional integer `floors` (1–5), optional `spaces`, optional `household` |
 | `scale_object` | `targetId`, positive XYZ `scale` |
 | `remove_room` | `targetId`; fails while furniture references the room |
 | `add_floor` | `floor`: full floor entity |
@@ -212,6 +212,14 @@ Validation covers strict required fields, enums, ID syntax/uniqueness, all in-pr
 
 Studio implements the core editing path; [editor-system.md](editor-system.md) documents it. Future work includes real furniture catalogs, arbitrary room creation tools, parametric layouts, open-plan zones, floor/roof authoring, richer material slots and cloud persistence. The generic engine supports adding floors/walls/rooms/openings through validated operations; the current inspector primarily edits existing entities.
 
-MVP limits remain: closed wall-bound room polygons without holes, no automatic wall splitting/merging, no room-overlap/inter-floor collision solver, no furniture containment enforcement, no opposing wall-face material system. Room style is descriptive metadata rather than an automatic visual redesign. New house generation is a deterministic concept template, not CAD or structural analysis. The schema supports multiple floors and renderers honor elevation; the concept generator creates a single floor.
+The schema supports 1–5 floors, and the architectural generator (`src/project/architecture-generator.ts`) produces multi-floor layouts with shared coincident wall vertices, upper-floor rooms, ceiling slabs, and procedural stairs.
 
-Run `npm test`, `npm run build` and `npm run test:editor`. The editor browser tests cover operations, persistence, hostile strings, API failures, idle rendering and mobile panels. Automated AI tests mock the provider; a live integration test requires a valid NVIDIA key.
+Run `npm test`, `npm run build` and `npm run test:editor`. The editor browser tests cover operations, persistence, hostile strings, API failures, idle rendering, cutaway preset, render gallery, and mobile panels. Automated AI tests mock the provider; a live integration test requires a valid NVIDIA key.
+
+## House brief, approval token and sun system
+
+Optional `metadata.designBrief` stores the original request, area, bedroom/bathroom/floor counts, style, site, household, spaces, materials, budget, lighting, requested interior views, attached `references`, optional `customConstraints`, and cryptographic `approvalToken` with timestamp `approvedAt`.
+
+`metadata.sun` stores `{ mode: "manual" | "solar", azimuth: 0..360, elevation: 1..90, intensity?: 0..10, warmth?: 0..1, softness?: 0..1, solarTime?: 0..24, solarDate?: string }`. Azimuth is clockwise from scene north (-Z); manual elevation is above the horizon. Warmth smoothly interpolates the sun color toward warm sunset tones, and intensity modulates directional lighting and shadow depth. `update_design_brief` and `update_sun` use the same validated atomic engine/history path as geometry. Older files without these fields remain accepted. `geo.mapUnderlay` remains accepted for backwards compatibility but has no visual presence.
+
+`createGenerationPlan(project)` exports a separate `mopple-generation-plan` v1 JSON contract, including project snapshot, brief, pending stages and provisional room render jobs. In addition, `server/generation.ts` exposes `/api/ai/generate` for executing and tracking durable generation jobs with requirement coverage reporting.

@@ -1,10 +1,20 @@
 import { z } from 'zod';
-import { doorSchema, floorSchema, geoSchema, idSchema, lightSchema, materialSchema, objectSchema, pointSchema, roomSchema, vectorSchema, wallSchema, windowSchema } from './schema.ts';
+import { designBriefSchema } from './brief.ts';
+import { sunSchema, doorSchema, floorSchema, geoSchema, idSchema, lightSchema, materialSchema, objectSchema, pointSchema, roomSchema, vectorSchema, wallSchema, windowSchema } from './schema.ts';
 import { MoppleValidationError } from './validation.ts';
 
 export const operationSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('rename_project'), name: z.string().trim().min(1).max(200) }),
-  z.strictObject({ type: z.literal('create_house'), area: z.number().min(40).max(600), bedrooms: z.number().int().min(1).max(8), bathrooms: z.number().int().min(1).max(5), style: z.string().trim().min(1).max(200) }),
+  z.strictObject({
+    type: z.literal('create_house'),
+    area: z.number().min(40).max(600),
+    bedrooms: z.number().int().min(1).max(8),
+    bathrooms: z.number().int().min(1).max(5),
+    style: z.string().trim().min(1).max(200),
+    floors: z.number().int().min(1).max(5).optional(),
+    spaces: z.string().trim().min(1).max(1000).optional(),
+    household: z.string().trim().min(1).max(1000).optional(),
+  }),
   z.strictObject({ type: z.literal('add_floor'), floor: floorSchema }),
   z.strictObject({ type: z.literal('create_room'), room: roomSchema }),
   z.strictObject({ type: z.literal('remove_room'), targetId: idSchema }),
@@ -24,6 +34,8 @@ export const operationSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('change_material'), material: materialSchema }),
   z.strictObject({ type: z.literal('change_room_style'), targetId: idSchema, style: z.string().trim().min(1).max(200) }),
   z.strictObject({ type: z.literal('update_lighting'), lights: z.array(lightSchema) }),
+  z.strictObject({ type: z.literal('update_sun'), sun: sunSchema }),
+  z.strictObject({ type: z.literal('update_design_brief'), brief: designBriefSchema }),
   z.strictObject({ type: z.literal('update_geo'), geo: geoSchema }),
 ]);
 export const operationsSchema = z.strictObject({ operations: z.array(operationSchema).min(1).max(100) });
