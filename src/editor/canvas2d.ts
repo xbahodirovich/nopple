@@ -50,6 +50,8 @@ export class Canvas2D {
   private dragWallStartPoint: Point = { x: 0, z: 0 };
 
   private spacePressed = false;
+  private touches=new Map<number,{x:number;y:number}>();
+  private pinchDistance=0;
   private events = new AbortController();
   private dpr = 1;
   private floorId: string | undefined;
@@ -208,6 +210,7 @@ export class Canvas2D {
     }, { signal: this.events.signal });
 
     this.canvas.addEventListener('pointerdown', (e) => {
+      if(e.pointerType==='touch'){this.touches.set(e.pointerId,{x:e.clientX,y:e.clientY});if(this.touches.size===2){const [a,b]=[...this.touches.values()];this.pinchDistance=Math.hypot(a.x-b.x,a.y-b.y);this.isPanning=this.isDraggingObject=this.isRotatingObject=this.isDraggingWallHandle=false;this.project=this.engine.getSnapshot();this.canvas.setPointerCapture(e.pointerId);this.render();return;}}
       const rect = this.canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
@@ -290,6 +293,7 @@ export class Canvas2D {
     });
 
     this.canvas.addEventListener('pointermove', (e) => {
+      if(this.touches.has(e.pointerId)){this.touches.set(e.pointerId,{x:e.clientX,y:e.clientY});if(this.touches.size===2){const [a,b]=[...this.touches.values()],d=Math.hypot(a.x-b.x,a.y-b.y),rect=this.canvas.getBoundingClientRect();if(d>0&&this.pinchDistance>0)this.setZoom(this.zoom*d/this.pinchDistance,(a.x+b.x)/2-rect.left,(a.y+b.y)/2-rect.top);this.pinchDistance=d;return;}}
       const rect = this.canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
@@ -368,6 +372,7 @@ export class Canvas2D {
     });
 
     const finishPointer = (e: PointerEvent) => {
+      this.touches.delete(e.pointerId);
       if (e.type === 'pointercancel') { this.isPanning = this.isDraggingObject = this.isRotatingObject = this.isDraggingWallHandle = false; this.activeDraggedObject = null; this.project = this.engine.getSnapshot(); this.render(); return; }
       if (this.canvas.hasPointerCapture(e.pointerId)) {
         this.canvas.releasePointerCapture(e.pointerId);
@@ -611,11 +616,13 @@ export class Canvas2D {
       ctx.textAlign = 'center';
       ctx.font = '600 13px Inter, -apple-system, sans-serif';
       ctx.fillStyle = isSelected ? '#a8e8d2' : '#e0e6e3';
-      ctx.fillText(room.name, 0, -3);
+      const labelWidth=Math.max(16,(Math.max(...xs)-Math.min(...xs))*this.zoom-12);
+      const labelHeight=(Math.max(...zs)-Math.min(...zs))*this.zoom;
+      ctx.fillText(room.name, 0, labelHeight<36 ? 4 : -3, labelWidth);
 
       ctx.font = '400 11px Inter, -apple-system, sans-serif';
       ctx.fillStyle = isSelected ? '#86bda9' : '#889e94';
-      ctx.fillText(`${area.toFixed(1)} m²`, 0, 13);
+      if(labelHeight>=36)ctx.fillText(`${area.toFixed(1)} m²`, 0, 13, labelWidth);
 
       ctx.restore();
     }

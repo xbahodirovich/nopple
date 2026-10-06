@@ -67,16 +67,16 @@ try {
   assert.equal(await page.locator('#layers-container img, #properties-container img').count(), 0);
   await page.keyboard.press('Escape');
 
-  // Provider failures are visible, retain input and cannot fall back to another edit.
+  // Provider failures are visible and fall back to the supported offline edit.
   await page.locator('#btn-apikey').click();
   await page.locator('#apikey-input').fill('nvapi-browser-test');
   await page.locator('#btn-save-apikey').click();
   await page.route('**/api/ai/operations', route => route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'Invalid API key. Your design is unchanged.' }) }));
   await page.locator('#ai-prompt-input').fill('remove the sofa'); await page.locator('#btn-ai-submit').click();
-  await page.locator('#ai-status.error').waitFor();
+  await page.locator('#ai-status.success').waitFor();
   assert.match(await page.locator('#ai-status').textContent(), /Invalid API key/);
-  assert.equal(await page.locator('#ai-prompt-input').inputValue(), 'remove the sofa');
-  assert.equal(await page.locator('.layer-item[data-id="object_sofa"]').count(), 1);
+  assert.equal(await page.locator('#ai-prompt-input').inputValue(), '');
+  assert.equal(await page.locator('.layer-item[data-id="object_sofa"]').count(), 0);
   assert.equal(await page.evaluate(() => localStorage.getItem('mopple_nim_api_key')), null);
   await page.unroute('**/api/ai/operations');
   await page.locator('#btn-apikey').click(); await page.locator('#apikey-input').fill(''); await page.locator('#btn-save-apikey').click();

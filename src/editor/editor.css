@@ -884,3 +884,16 @@ canvas { touch-action: none; }
   .ai-spinner { animation: none; }
   .btn, .icon-button, .view-tab, .layer-item { transition: none; }
 }
+
+.workspace-tools { flex-wrap: wrap; }
+.home-row { display:flex; flex-wrap:wrap; gap:12px; padding:20px 0; border-bottom:1px solid var(--border-subtle); }
+.home-row input { flex:1; min-width:160px; padding:10px; background:var(--bg-surface); color:var(--text-primary); border:1px solid var(--border-subtle); }
+@media(max-width:760px) {
+ .workspace-tools { gap:6px; max-height:120px; overflow:auto; }
+ .workspace-tools .btn { padding:8px; min-height:40px; }
+ .top-bar { flex-wrap:wrap; height:auto; min-height:92px; }
+ .brand-section { min-width:0; }
+ .nav-actions { gap:6px; }
+}
+
+@media(max-width:760px){ .brand-section { flex:1 0 100%; } .nav-actions { width:100%;justify-content:space-between; } .top-bar { min-height:130px; } }

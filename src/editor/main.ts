@@ -1,6 +1,7 @@
+import { track } from '../alpha/telemetry.ts';
 import { shareHome } from '../alpha/projects.ts';
 import { exportPlan, download } from '../alpha/exporters.ts';
-import { saveHome } from '../alpha/projects.ts';
+import { saveHome, saveLocation } from '../alpha/projects.ts';
 import { errorMessage, labelControls, reportEditorError } from './ui.ts';
 import '@fontsource-variable/inter';
 import './editor.css';
@@ -33,6 +34,7 @@ function initializeEngine(): MoppleProjectEngine {
 }
 
 export function initEditor() {
+  track('editor_opened');
   const engine = initializeEngine();
   const events = new AbortController();
   const cleanups: (() => void)[] = [];
@@ -80,9 +82,9 @@ export function initEditor() {
   try { canvas3d = new Canvas3D(pane3D, { engine, onSelect: entity => handleSelect(entity), onError: reportEditorError }); }
   catch { pane3D.textContent = '3D is unavailable in this browser. You can continue editing in 2D.'; showStatus('WebGL is unavailable; 2D editing is still available.', 'error'); }
 
-  for (const format of ['png','pdf'] as const) document.getElementById(`export-${format}`)?.addEventListener('click',()=>{ void exportPlan(engine.getSnapshot(),format).catch(e=>showStatus(errorMessage(e),'error')); });
-  document.getElementById('export-3d')?.addEventListener('click',()=>{if(!canvas3d){showStatus('3D is unavailable in this browser.','error');return;}void canvas3d.screenshot().then(blob=>download(blob,'mopple-3d.png')).catch(e=>showStatus(errorMessage(e),'error'));});
-  document.getElementById('share-home')?.addEventListener('click',()=>{void shareHome(engine.getSnapshot()).then(async url=>{try{await navigator.clipboard.writeText(url);showStatus('Read-only share link copied.','success');}catch{const link=document.createElement('a');link.href=url;link.textContent='Open your share link';link.target='_blank';link.rel='noopener';document.querySelector('.workspace-tools')?.append(link);showStatus('Share link ready. Open it to copy the address.','success');}}).catch(e=>showStatus(errorMessage(e),'error'));});
+  for (const format of ['png','pdf'] as const) document.getElementById(`export-${format}`)?.addEventListener('click',()=>{ track('export_clicked',{format}); void exportPlan(engine.getSnapshot(),format).catch(e=>showStatus(errorMessage(e),'error')); });
+  document.getElementById('export-3d')?.addEventListener('click',()=>{track('export_clicked',{format:'3d'});if(!canvas3d){showStatus('3D is unavailable in this browser.','error');return;}void canvas3d.screenshot().then(blob=>download(blob,'mopple-3d.png')).catch(e=>showStatus(errorMessage(e),'error'));});
+  document.getElementById('share-home')?.addEventListener('click',()=>{void shareHome(engine.getSnapshot()).then(async url=>{track('home_shared');try{await navigator.clipboard.writeText(url);showStatus('Read-only share link copied.','success');}catch{const link=document.createElement('a');link.href=url;link.textContent='Open your share link';link.target='_blank';link.rel='noopener';document.querySelector('.workspace-tools')?.append(link);showStatus('Share link ready. Open it to copy the address.','success');}}).catch(e=>showStatus(errorMessage(e),'error'));});
 
   // 2. Instantiate Panels
   const layersPanel = new LayersPanel(layersContainer, {
@@ -222,7 +224,7 @@ export function initEditor() {
     if (saveDebounceTimer !== null) clearTimeout(saveDebounceTimer);
     saveDebounceTimer = null;
     if (!pendingSave) return;
-    try { localStorage.setItem(AUTOSAVE_STORAGE_KEY, engine.saveProject()); pendingSave = false; saveText.textContent = 'Saved locally'; void saveHome(engine.getSnapshot()).then(() => { saveText.textContent = 'Saved'; }).catch(() => { saveText.textContent = 'Saved locally'; }); }
+    try { localStorage.setItem(AUTOSAVE_STORAGE_KEY, engine.saveProject()); pendingSave = false; saveText.textContent = 'Saved locally'; void saveHome(engine.getSnapshot()).then(() => { saveText.textContent = saveLocation(); track('home_saved'); }).catch(() => { saveText.textContent = 'Saved locally'; }); }
     catch { saveText.textContent = 'Not saved'; showStatus('Browser storage is unavailable or full. Export your project to keep your changes.', 'error'); }
   }
   projectTitle.value = engine.getSnapshot().project.name;
@@ -317,7 +319,8 @@ export function initEditor() {
     showStatus(getStoredApiKey() ? `Asking ${getStoredModel()}…` : 'Applying offline design command…', 'loading');
     try {
       const result = await executeAiPrompt(text, engine, selectedEntity?.id);
-      showStatus(result.message, 'success'); aiInput.value = ''; handleSelect(null);
+      if(engineBadgeText)engineBadgeText.textContent=result.source==='nvidia_nim'?'Hosted AI':'Offline Engine';
+      track(isHouseRequest(text) ? 'home_generated' : 'home_edited', {source:result.source}); showStatus(result.message, 'success'); aiInput.value = ''; handleSelect(null);
       if (isHouseRequest(text)) { canvas2d.resetView(); canvas3d?.resetCamera(); }
     } catch (error) { showStatus(errorMessage(error), 'error'); }
     finally { aiBusy = false; aiSubmit.disabled = false; document.querySelectorAll<HTMLButtonElement>('.ai-chip').forEach(b => b.disabled = false); }

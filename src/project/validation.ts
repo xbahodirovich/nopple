@@ -81,6 +81,7 @@ export function validateProject(input: unknown): MoppleProject {
     openingBounds.push(bounds);
   }
   for (const o of p.interior.objects) {
+    material(o.materialId, o.id);
     if (!roomIds.has(o.roomId)) fail(o.id, 'Unknown room');
     for (const override of o.materialOverrides ?? []) material(override.materialId, o.id);
     const slots = (o.materialOverrides ?? []).map(m => m.slot);

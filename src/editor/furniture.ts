@@ -9,21 +9,13 @@ export interface FurnitureFootprint {
 }
 
 // Default standard footprint dimensions (in meters) for each kind
-export const DEFAULT_FURNITURE_SIZES: Record<MoppleInteriorObject['kind'], { width: number; height: number; depth: number }> = {
-  sofa: { width: 2.2, height: 0.8, depth: 0.95 },
-  bed: { width: 1.8, height: 0.9, depth: 2.1 },
-  table: { width: 1.6, height: 0.75, depth: 0.9 },
-  chair: { width: 0.55, height: 0.82, depth: 0.55 },
-  cabinet: { width: 1.4, height: 0.85, depth: 0.5 },
-  lamp: { width: 0.45, height: 1.5, depth: 0.45 },
-  appliance: { width: 0.9, height: 0.9, depth: 0.65 },
-  decoration: { width: 0.5, height: 0.7, depth: 0.5 },
-};
+export { DEFAULT_FURNITURE_SIZES } from '../project/furniture-dimensions.ts';
+import { DEFAULT_FURNITURE_SIZES } from '../project/furniture-dimensions.ts';
 
 export function getFurnitureFootprint(obj: MoppleInteriorObject): FurnitureFootprint {
   const defaults = DEFAULT_FURNITURE_SIZES[obj.kind] || { width: 1, height: 1, depth: 1 };
-  const width = defaults.width * (obj.scale?.x ?? 1);
-  const depth = defaults.depth * (obj.scale?.z ?? 1);
+  const width = (obj.size?.x ?? defaults.width) * (obj.scale?.x ?? 1);
+  const depth = (obj.size?.z ?? defaults.depth) * (obj.scale?.z ?? 1);
   const colors: Record<MoppleInteriorObject['kind'], string> = {
     sofa: '#7d9181',
     bed: '#8599a8',
@@ -55,7 +47,7 @@ export function createFurnitureMesh(
 
   // Helper to resolve material
   function getMaterial(slotName: string, fallbackColor: string, roughness = 0.6, metalness = 0.1): THREE.Material {
-    const override = obj.materialOverrides?.find(o => o.slot === slotName);
+    const override = obj.materialOverrides?.find(o => o.slot === slotName) ?? (obj.materialId ? {materialId:obj.materialId} : undefined);
     if (override && materialsMap.has(override.materialId)) {
       const mat = materialsMap.get(override.materialId)!;
       return new THREE.MeshStandardMaterial({
@@ -223,7 +215,10 @@ export function createFurnitureMesh(
   // Apply object transform
   group.position.set(obj.position.x, obj.position.y, obj.position.z);
   group.rotation.set(obj.rotation.x, obj.rotation.y, obj.rotation.z);
-  group.scale.set(obj.scale.x, obj.scale.y, obj.scale.z);
+  if (obj.size) {
+    const bounds=new THREE.Box3().setFromObject(group).getSize(new THREE.Vector3());
+    group.scale.set(obj.size.x/Math.max(bounds.x,.001)*obj.scale.x,obj.size.y/Math.max(bounds.y,.001)*obj.scale.y,obj.size.z/Math.max(bounds.z,.001)*obj.scale.z);
+  } else group.scale.set(obj.scale.x, obj.scale.y, obj.scale.z);
 
   return group;
 }

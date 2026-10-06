@@ -7,7 +7,7 @@ export const cloudConfigured = Boolean(url && key);
 const storageKey = 'mopple_homes_v1';
 const hash = new URLSearchParams(location.hash.slice(1));
 if (hash.has('access_token')) {
- sessionStorage.setItem('mopple_auth', JSON.stringify({ token: hash.get('access_token'), expires: Date.now() + Number(hash.get('expires_in') ?? 3600)*1000 }));
+ sessionStorage.setItem('mopple_auth', JSON.stringify({ token: hash.get('access_token'), refresh: hash.get('refresh_token'), expires: Date.now() + Number(hash.get('expires_in') ?? 3600)*1000 }));
  history.replaceState(null,'',location.pathname + location.search);
 }
 function token(): string | undefined {
@@ -17,8 +17,17 @@ export function signIn() {
  if (!cloudConfigured) throw new Error('Cloud accounts are not configured. Your homes are saved on this device.');
  location.href = `${url}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(location.origin+'/homes.html')}`;
 }
-export function signOut() { sessionStorage.removeItem('mopple_auth'); }
+export function signOut() { const access=token();sessionStorage.removeItem('mopple_auth');if(url&&key&&access)void fetch(`${url}/auth/v1/logout`,{method:'POST',headers:{apikey:key,Authorization:`Bearer ${access}`}}).catch(()=>{}); }
+let refreshing: Promise<void> | undefined;
+async function refreshSession() {
+ if (!cloudConfigured || token()) return;
+ const auth=JSON.parse(sessionStorage.getItem('mopple_auth') ?? 'null');if(!auth?.refresh)return;
+ refreshing ??= (async()=>{const response=await fetch(`${url}/auth/v1/token?grant_type=refresh_token`,{method:'POST',headers:{apikey:key!,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:auth.refresh})});if(!response.ok){sessionStorage.removeItem('mopple_auth');throw new Error('Session expired. Sign in again; your local home is saved.');}const next=await response.json();sessionStorage.setItem('mopple_auth',JSON.stringify({token:next.access_token,refresh:next.refresh_token,expires:Date.now()+next.expires_in*1000}));})();
+ try {await refreshing;}finally{refreshing=undefined;}
+}
+export const saveLocation = () => cloudConfigured && token() ? 'Saved to cloud' : 'Saved locally';
 async function rest(path: string, init: RequestInit = {}, publicRead = false) {
+ if(!publicRead)await refreshSession();
  const response = await fetch(`${url}/rest/v1/${path}`, { ...init, headers: { apikey: key!, Authorization: `Bearer ${publicRead ? key : token() ?? key}`, 'Content-Type':'application/json', ...init.headers } });
  if (!response.ok) throw new Error('Cloud saving unavailable. Your local copy is kept.');
  return response.status === 204 ? null : response.json();
@@ -26,6 +35,7 @@ async function rest(path: string, init: RequestInit = {}, publicRead = false) {
 export function localHomes(): SavedHome[] { try { return JSON.parse(localStorage.getItem(storageKey) ?? '[]'); } catch { return []; } }
 function write(homes: SavedHome[]) { localStorage.setItem(storageKey, JSON.stringify(homes)); }
 export async function listHomes(): Promise<SavedHome[]> {
+ await refreshSession();
  if (!cloudConfigured || !token()) return localHomes();
  const rows = await rest('projects?select=id,name,model,versions&order=updated_at.desc');
  const merged = new Map(localHomes().map(h => [h.id,h]));
@@ -37,6 +47,7 @@ export async function saveHome(input: MoppleProject) {
  const versions = previous ? [previous.model, ...previous.versions].slice(0,10) : [];
  const home = {id:model.project.id,name:model.project.name,model,versions};
  write([home,...homes.filter(h => h.id !== home.id)]);
+ await refreshSession();
  if (cloudConfigured && token()) await rest('rpc/save_home', {method:'POST',body:JSON.stringify({home_id:home.id,home_name:home.name,home_model:model})});
  return home;
 }

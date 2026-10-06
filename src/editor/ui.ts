@@ -1,8 +1,10 @@
+import { trackError } from '../alpha/telemetry.ts';
 export function escapeHtml(value: unknown): string {
   return String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
 }
 export function errorMessage(error: unknown): string { return error instanceof Error ? error.message : 'The change could not be applied.'; }
 export function reportEditorError(error: unknown): void {
+  trackError(error);
   window.dispatchEvent(new CustomEvent('mopple-error', { detail: errorMessage(error) }));
 }
 export function labelControls(container: HTMLElement): void {

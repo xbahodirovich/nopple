@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#000000" />
     <meta name="description" content="Meet Mopple. A new way to bring your home to life with AI-powered architecture, interior design, and 3D visualization." />
     <link rel="icon" type="image/png" href="/mopple-icon.png" />
-    <title>Mopple — A home, imagined by you.</title>
+    <meta property="og:title" content="Mopple — Imagine your home"><meta property="og:description" content="Describe a home in English, Russian or Uzbek. Explore a 2D plan and 3D concept, edit, save and share."><meta property="og:type" content="website"><meta property="og:image" content="/mopple-logo.png"><meta name="twitter:card" content="summary_large_image"><title>Mopple — A home, imagined by you.</title>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -29,7 +29,7 @@
         <div class="hero-visual" id="demo">
           <div class="scene-heading"><span class="status-dot" aria-hidden="true"></span><span>One home. Every perspective.</span><span class="demo-label">MOPPLE STUDY / 001</span></div>
           <div class="scene-viewport" id="scene-viewport" role="img" aria-label="Demonstration of the same modern home transitioning from a 3D exterior to a furnished interior and architectural floor plan">
-            <div id="fallback" class="fallback"></div>
+            <div id="fallback" class="fallback"><noscript><p>Imagine an 80 m² home: living room, kitchen, bedroom and bathroom. Open the editor with JavaScript enabled to explore the plan and 3D scene.</p></noscript></div>
             <span class="loading" id="loading" role="status">Preparing your perspective…</span>
           </div>
           <div class="scene-caption"><span id="stage-description">See the whole picture.</span><span class="sample-label">Illustrative home · 80 m²</span></div>
@@ -53,6 +53,8 @@
           <a href="#demo" data-view="0"><span class="capability-number">03</span><div><h3>See it all come to life.</h3><p>Experience your home in 3D. See how every decision belongs to the bigger picture.</p><span class="text-link">3D visualization <span aria-hidden="true">↗</span></span></div></a>
         </div>
       </section>
+      <section class="possibilities wrap" aria-labelledby="example-title"><div><h2 id="example-title">From a sentence<br>to a home.</h2><p class="section-intro">For homeowners and renters exploring layouts before a move or renovation.</p></div><div><h3>Before</h3><p>“Create a 120 sqm home with 2 bedrooms and 1 bathroom.”</p><h3>After</h3><p>A furnished single-floor concept with two bedrooms, a bathroom, living room, kitchen and a connecting hallway. Edit the same home in 2D and 3D, then export your plan.</p><p>Concept designs for exploring ideas. Review real building work with a qualified professional.</p><a class="button" href="/editor.html">Try your own home</a></div></section>
+      <section class="possibilities wrap" aria-labelledby="pro-title"><div><h2 id="pro-title">Mopple Pro,<br>when you’re ready.</h2><p>Join the waitlist for future Pro tools.</p></div><form id="waitlist"><label for="waitlist-email">Email address</label><input id="waitlist-email" type="email" name="email" required autocomplete="email" maxlength="254"><button class="button" type="submit">Join waitlist</button><p id="waitlist-status" role="status"></p><noscript>The waitlist needs JavaScript. You can still explore this page and open the editor.</noscript></form></section>
       <section class="start wrap" id="start" aria-labelledby="start-title">
         <h2 id="start-title">Your next chapter.<br /><span>Your own space.</span></h2>
         <div class="start-copy"><p>Mopple is live.</p><p>Explore the demonstration house, or enter the full studio with AI generation, Figma-like direct editing, and synchronized 3D views.</p><a class="button" href="#demo" data-view="2">Explore the demonstration <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg></a><a class="button" href="/editor.html" style="margin-left: 12px; background: #161d1a; border: 1px solid #26332d; color: #a8e8d2;">Open Studio <span aria-hidden="true">↗</span></a></div>
@@ -61,5 +63,5 @@
     <footer class="wrap footer"><a class="wordmark" href="#" aria-label="Mopple home"><img src="/mopple-logo.png" alt="Mopple" width="1536" height="1024" /></a><span>A home, imagined by you.</span><span>© <span id="year">2026</span> Mopple</span></footer>
     <noscript><p class="noscript">Mopple brings architecture, interior design, and 3D together. Enable JavaScript to explore the demonstration house.</p></noscript>
     <script type="module" src="/src/main.ts"></script>
-  </body>
+  <script type="module" src="/src/alpha/waitlist.ts"></script></body>
 </html>

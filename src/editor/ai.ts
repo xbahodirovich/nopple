@@ -51,7 +51,7 @@ export async function executeAiPrompt(prompt: string, engine: MoppleProjectEngin
       try {
         response = await fetch('/api/ai/operations', {
           method: 'POST', headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
-          body: JSON.stringify({ prompt: text, project, selectedId, model }), signal: AbortSignal.timeout(95000),
+          body: JSON.stringify({ prompt: text, project, selectedId, model, mode: isHouseRequest(text) ? 'GENERATE' : 'EDIT' }), signal: AbortSignal.timeout(95000),
         });
       } catch (error) {
         if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) throw new Error('AI timed out. Your design is unchanged. Try a smaller request.');
@@ -75,7 +75,7 @@ export async function executeAiPrompt(prompt: string, engine: MoppleProjectEngin
     return { success: true, message: `Applied ${operations.operations.length} operation(s)${hosted ? ` via ${model}` : ` offline. ${fallbackReason}`}. Undo is available.`, operationsCount: operations.operations.length, source: hosted ? 'nvidia_nim' : 'local_semantic', model: hosted ? model : undefined };
   } finally { busyEngines.delete(engine); }
 }
-export function isHouseRequest(text: string): boolean { return /\b(create|generate|build|design)\b.*\b(house|home|apartment|villa)\b/i.test(text) || /(?:дом|квартир).*(?:созд|сдел|спроект)|(?:созд|сдел|спроект).*(?:дом|квартир)|(?:uy|xonadon|kvartira).*(?:yarat|qur|loyiha)|(?:yarat|qur|loyiha).*(?:uy|xonadon|kvartira)/i.test(text); }
+export function isHouseRequest(text: string): boolean { if(/(?:i want|i need|i.d like|хочу|нужен|нужна|нужно|menga|kerak).*(?:home|house|apartment|дом|квартир|uy|xonadon)/i.test(text) || /(?:uy|xonadon).*(?:kerak)/i.test(text))return true; return /\b(create|generate|build|design)\b.*\b(house|home|apartment|villa)\b/i.test(text) || /(?:дом|квартир).*(?:созд|сдел|спроект)|(?:созд|сдел|спроект).*(?:дом|квартир)|(?:uy|xonadon|kvartira).*(?:yarat|qur|loyiha)|(?:yarat|qur|loyiha).*(?:uy|xonadon|kvartira)/i.test(text); }
 const freshId = (prefix: string) => `${prefix}_${globalThis.crypto.randomUUID()}`;
 
 /**
@@ -91,10 +91,10 @@ export function interpretPromptLocally(
   const rooms = project.building.rooms;
   const objects = project.interior.objects;
 
-  if (isHouseRequest(p)) {
+  if (isHouseRequest(prompt) || isHouseRequest(p)) {
     const number = (pattern: RegExp, fallback: number) => { const m = p.match(pattern); return m ? (countMap[m[1]] ?? Number(m[1])) : fallback; };
     if (/\b(?:[2-9]|two|three|four|five)\s*[- ]?(?:floors?|stor(?:ey|y|ies))\b/.test(p)) throw new Error('The offline house generator supports one floor. Use connected AI for a multi-floor design.');
-    return [{ type: 'create_house', area: number(/(\d+(?:\.\d+)?)\s*(?:m²|m2|square meters?|sqm)/, 150), bedrooms: number(/(one|two|three|four|five|six|\d+)\s*bedrooms?/, 3), bathrooms: number(/(one|two|three|four|five|six|\d+)\s*bathrooms?/, 2), style: /minimal/.test(p) ? 'minimal' : 'modern' }];
+    return [{ type: 'create_house', area: number(/(\d+(?:\.\d+)?)\s*(?:m²|m2|square meters?|sqm)/, 150), bedrooms: number(/(one|two|three|four|five|six|\d+)\s*[- ]?\s*bedrooms?/, 3), bathrooms: number(/(one|two|three|four|five|six|\d+)\s*[- ]?\s*bathrooms?/, 2), style: /minimal/.test(p) ? 'minimal' : 'modern' }];
   }
   function findTargetRoom(): MoppleRoom | undefined {
     const exact = rooms.filter(r => p.includes(r.name.toLowerCase()));

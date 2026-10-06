@@ -54,3 +54,7 @@ The original `design.md` is unchanged. Its black canvas, typography, spacing, tw
 Scrolling down transforms the pinned house from exterior to interior to floor plan; scrolling up restores the exact earlier representation. Stage buttons scroll to the matching viewpoint. There is no timer-based playback. Reduced-motion preference removes pinning and scroll scrubbing; stage selection shows static views immediately. Rendering stops while idle, offscreen, or in a hidden tab. Mobile uses a lower pixel ratio without shadows, and slow renderers reduce quality further. Context loss falls back to the static plan.
 
 Three.js references: [renderer lifecycle](https://threejs.org/docs/pages/WebGLRenderer.html) and [orthographic projection](https://threejs.org/docs/pages/OrthographicCamera.html).
+
+## Alpha upgrade
+
+See [docs/UPGRADE_SUMMARY.md](docs/UPGRADE_SUMMARY.md) for the current cloud setup, environment variables, project library, sharing, exports and acceptance checks. Hosted AI credentials belong on the server; visitors can use the offline designer without a key or account.

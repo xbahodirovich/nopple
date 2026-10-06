@@ -1,3 +1,4 @@
+import { DEFAULT_FURNITURE_SIZES } from './furniture-dimensions.ts';
 import type { MoppleProject, MoppleRoom, Point } from './schema.ts';
 
 /** Deterministic concept layout: two room wings connected by a central hall. */
@@ -47,7 +48,7 @@ export function createHouseDesign(project: MoppleProject, brief: { area: number;
     b.doors.push({ id: `house_door_${i}`, wallId: inside.wallId, position: .5, width: .85, height: 2.1 });
     b.windows.push({ id: `house_window_${i}`, wallId: outside.wallId, position: .5, width: Math.min(1.5, (x1 - x0) * .5), height: 1.1, sillHeight: 1, materialId: 'house_glass' });
     const kind = type === 'bedroom' ? 'bed' : type === 'living_room' ? 'sofa' : type === 'dining_room' ? 'table' : 'cabinet';
-    project.interior.objects.push({ id: `house_object_${i}`, assetId: `${kind}_standard`, kind, roomId, position: { x: (x0 + x1) / 2, y: 0, z: (z0 + z1) / 2 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } });
+    project.interior.objects.push({ id: `house_object_${i}`, assetId: `${kind}_standard`, kind, roomId, position: { x: (x0 + x1) / 2, y: 0, z: (z0 + z1) / 2 }, size: {x:DEFAULT_FURNITURE_SIZES[kind].width,y:DEFAULT_FURNITURE_SIZES[kind].height,z:DEFAULT_FURNITURE_SIZES[kind].depth}, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } });
   });
   const east = edge({ x: width / 2, z: -hallDepth / 2 }, { x: width / 2, z: hallDepth / 2 });
   const west = edge({ x: -width / 2, z: hallDepth / 2 }, { x: -width / 2, z: -hallDepth / 2 });

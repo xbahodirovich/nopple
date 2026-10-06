@@ -15,6 +15,8 @@ export interface Canvas3DOptions {
 
 export class Canvas3D {
   private readOnly = false;
+  private touches = new Map<number,{x:number;y:number}>();
+  private pinchDistance = 0;
   private container: HTMLElement;
   private engine: MoppleProjectEngine;
   private project: MoppleProject;
@@ -203,6 +205,7 @@ export class Canvas3D {
     }, { passive: false });
 
     el.addEventListener('pointerdown', e => {
+      if(e.pointerType==='touch'){this.touches.set(e.pointerId,{x:e.clientX,y:e.clientY});if(this.touches.size===2){const [a,b]=[...this.touches.values()];this.pinchDistance=Math.hypot(a.x-b.x,a.y-b.y);this.isOrbiting=this.isDraggingObject=this.isPanning=false;el.setPointerCapture(e.pointerId);return;}}
       const rect = el.getBoundingClientRect();
       this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -268,6 +271,7 @@ export class Canvas3D {
     });
 
     el.addEventListener('pointermove', e => {
+      if(this.touches.has(e.pointerId)){this.touches.set(e.pointerId,{x:e.clientX,y:e.clientY});if(this.touches.size===2){const [a,b]=[...this.touches.values()],d=Math.hypot(a.x-b.x,a.y-b.y);if(d>0&&this.pinchDistance>0)this.cameraDistance=Math.max(3,Math.min(400,this.cameraDistance*this.pinchDistance/d));this.pinchDistance=d;this.updateCameraPosition();return;}}
       const rect = el.getBoundingClientRect();
       this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -331,6 +335,7 @@ export class Canvas3D {
     });
 
     const finishPointer = (e: PointerEvent) => {
+      this.touches.delete(e.pointerId);
       if (e.type === 'pointercancel') { this.isPanning = this.isOrbiting = this.isDraggingObject = false; this.draggedObject = null; this.project = this.engine.getSnapshot(); this.rebuildScene(); return; }
       if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
 

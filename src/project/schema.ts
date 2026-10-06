@@ -36,6 +36,8 @@ export const objectSchema = z.strictObject({
   kind: z.enum(['sofa', 'bed', 'table', 'chair', 'cabinet', 'lamp', 'decoration', 'appliance']),
   position: vectorSchema, rotation: vectorSchema,
   scale: z.strictObject({ x: positive, y: positive, z: positive }),
+  size: z.strictObject({ x: positive, y: positive, z: positive }).optional(),
+  materialId: idSchema.optional(),
   materialOverrides: z.array(z.strictObject({ slot: name, materialId: idSchema })).optional(),
 });
 export const materialSchema = z.strictObject({

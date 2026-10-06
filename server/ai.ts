@@ -1,3 +1,4 @@
+import { distributedQuota } from './quota.ts';
 import { isHouseRequest } from '../src/editor/ai.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
@@ -7,7 +8,7 @@ import { MoppleProjectEngine } from '../src/project/engine.ts';
 
 const clients = new Map<string, { start: number; count: number }>();
 const quota = { day: '', count: 0 };
-const requestSchema = z.strictObject({ prompt: z.string().trim().min(1).max(4000), project: z.unknown(), selectedId: z.string().optional(), model: z.enum(['z-ai/glm-5.3-flash', 'meta/llama-3.3-70b-instruct', 'deepseek-ai/deepseek-r1', 'qwen/qwen2.5-72b-instruct']) });
+const requestSchema = z.strictObject({ prompt: z.string().trim().min(1).max(4000), project: z.unknown(), selectedId: z.string().optional(), mode: z.enum(['GENERATE','EDIT']).optional(), model: z.enum(['z-ai/glm-5.3-flash', 'meta/llama-3.3-70b-instruct', 'deepseek-ai/deepseek-r1', 'qwen/qwen2.5-72b-instruct']) });
 const responseSchema = z.object({ choices: z.array(z.object({ finish_reason: z.string().nullable().optional(), message: z.object({ content: z.string().nullable() }) })).min(1) });
 const operationContract = JSON.stringify(z.toJSONSchema(operationsSchema));
 
@@ -27,12 +28,15 @@ export async function handleAiRequest(req: IncomingMessage, res: ServerResponse,
   if (!authorization?.startsWith('Bearer nvapi-') || authorization.length > 1024) { send(401, { error: 'Hosted AI is not configured. Using the offline designer.' }); return; }
   if (!req.headers['content-type']?.startsWith('application/json')) { send(415, { error: 'Expected JSON.' }); return; }
   const ip = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() ?? req.socket?.remoteAddress ?? 'local';
+  let distributed: boolean | undefined;
+  try { distributed = await distributedQuota(ip); } catch { send(503, {error:'AI limits unavailable. Using offline designer.'}); return; }
+  if (distributed === false) { send(429,{error:'AI request limit reached. Using offline designer.'});return; }
   const now = Date.now(), day = new Date().toISOString().slice(0,10);
   if (quota.day !== day) { quota.day = day; quota.count = 0; clients.clear(); }
   const bucket = clients.get(ip);
   if ((!bucket || now - bucket.start >= 60000)) clients.set(ip, { start: now, count: 0 });
   const current = clients.get(ip)!;
-  if (current.count >= Number(process.env.AI_PER_IP_PER_MINUTE ?? 10) || quota.count >= Number(process.env.AI_DAILY_CAP ?? 500)) { send(429, { error: 'AI request limit reached. Using offline designer.' }); return; }
+  if (distributed === undefined && (current.count >= Number(process.env.AI_PER_IP_PER_MINUTE ?? 10) || quota.count >= Number(process.env.AI_DAILY_CAP ?? 500))) { send(429, { error: 'AI request limit reached. Using offline designer.' }); return; }
   current.count++; quota.count++;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90000);
@@ -40,7 +44,9 @@ export async function handleAiRequest(req: IncomingMessage, res: ServerResponse,
   res.on('close', disconnect);
   try {
     const chunks: Buffer[] = []; let size = 0;
-    for await (const chunk of req.iterator({ destroyOnReturn: false })) {
+    const parsedBody = (req as IncomingMessage & {body?:unknown}).body;
+    if (parsedBody !== undefined) {const raw = typeof parsedBody === 'string' ? parsedBody : JSON.stringify(parsedBody);chunks.push(Buffer.from(raw));size=Buffer.byteLength(raw);if(size>1024*1024){send(413,{error:'Project exceeds 1 MiB'});return;}}
+    else for await (const chunk of req.iterator({ destroyOnReturn: false })) {
       const buffer = Buffer.from(chunk); size += buffer.length;
       if (size > 1024 * 1024) { req.resume(); send(413, { error: 'Project is too large for this AI request (1 MiB maximum).' }); return; }
       chunks.push(buffer);
@@ -53,7 +59,7 @@ Coordinates are right-handed, meters, Y up, X/Z plan, XYZ Euler radians. Wall op
     for (let attempt = 0; attempt < 2; attempt++) {
     const response = await fetcher('https://integrate.api.nvidia.com/v1/chat/completions', {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: authorization }, signal: controller.signal,
-      body: JSON.stringify({ model: input.model, messages: [{ role: 'system', content: prompt + '\nSupport English, Russian and Uzbek. Mode: ' + (/create|generate|build|design|создай|создать|uy|дом|квартир/i.test(input.prompt) ? 'GENERATE' : 'EDIT') + correction }, { role: 'user', content: JSON.stringify({ request: input.prompt, selectedId: input.selectedId ?? null, project }) }], temperature: .1, max_tokens: 8192, stream: false, ...(input.model.startsWith('z-ai/') ? { reasoning_effort: 'low', chat_template_kwargs: { clear_thinking: true } } : {}) }),
+      body: JSON.stringify({ model: input.model, messages: [{ role: 'system', content: prompt + '\nSupport English, Russian and Uzbek. Mode: ' + (input.mode ?? (isHouseRequest(input.prompt) ? 'GENERATE' : 'EDIT')) + correction }, { role: 'user', content: JSON.stringify({ request: input.prompt, selectedId: input.selectedId ?? null, project }) }], temperature: .1, max_tokens: 8192, stream: false, ...(input.model.startsWith('z-ai/') ? { reasoning_effort: 'low', chat_template_kwargs: { clear_thinking: true } } : {}) }),
     });
     if (!response.ok) {
       const messages: Record<number, string> = { 400: 'NVIDIA rejected the model request. Check the selected model or try another model.', 401: 'NVIDIA rejected your API key. Update it in AI settings.', 403: 'Your NVIDIA key cannot access this model. Choose another model.', 404: 'This model is unavailable. Choose another model.', 429: 'NVIDIA rate limit reached. Wait and try again.' };
@@ -61,12 +67,13 @@ Coordinates are right-handed, meters, Y up, X/Z plan, XYZ Euler radians. Wall op
     }
     try {
     const result = responseSchema.parse(await response.json());
-    if (result.choices[0].finish_reason === 'length') { send(422, { error: 'AI response was incomplete. Try one smaller change at a time.' }); return; }
+    if (result.choices[0].finish_reason === 'length') throw new Error('AI response was incomplete.');
     const content = result.choices[0].message.content;
-    if (!content?.trim()) { send(422, { error: 'AI returned no design operations. Try a smaller request or another model.' }); return; }
+    if (!content?.trim()) throw new Error('AI returned no design operations.');
     const clean = content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
     const operations = validateOperations(JSON.parse(clean));
-    if (operations.operations.some(o => o.type === 'create_house') && !isHouseRequest(input.prompt)) throw new Error('AI attempted to replace the house during an ordinary edit.');
+    if (operations.operations.some(o => o.type === 'create_house') && (input.mode === 'EDIT' || !isHouseRequest(input.prompt))) throw new Error('AI attempted to replace the house during an ordinary edit.');
+    if (input.mode === 'GENERATE' && !operations.operations.some(o=>o.type==='create_house')) throw new Error('GENERATE mode must include create_house for a complete new home.');
     // Validate relationships and geometry without changing the active browser project.
     new MoppleProjectEngine(project).applyOperations(operations);
     send(200, operations); return;
