@@ -1,3 +1,4 @@
+import { saveHome } from '../alpha/projects.ts';
 import { errorMessage, labelControls, reportEditorError } from './ui.ts';
 import '@fontsource-variable/inter';
 import './editor.css';
@@ -215,7 +216,7 @@ export function initEditor() {
     if (saveDebounceTimer !== null) clearTimeout(saveDebounceTimer);
     saveDebounceTimer = null;
     if (!pendingSave) return;
-    try { localStorage.setItem(AUTOSAVE_STORAGE_KEY, engine.saveProject()); pendingSave = false; saveText.textContent = 'Saved'; }
+    try { localStorage.setItem(AUTOSAVE_STORAGE_KEY, engine.saveProject()); pendingSave = false; saveText.textContent = 'Saved locally'; void saveHome(engine.getSnapshot()).then(() => { saveText.textContent = 'Saved'; }).catch(() => { saveText.textContent = 'Saved locally'; }); }
     catch { saveText.textContent = 'Not saved'; showStatus('Browser storage is unavailable or full. Export your project to keep your changes.', 'error'); }
   }
   projectTitle.value = engine.getSnapshot().project.name;
