@@ -13,6 +13,7 @@ if (hash.has('access_token')) {
 function token(): string | undefined {
  try { const auth = JSON.parse(sessionStorage.getItem('mopple_auth') ?? 'null'); return auth?.expires > Date.now() ? auth.token : undefined; } catch { return undefined; }
 }
+export const isSignedIn = () => Boolean(token());
 export function signIn() {
  if (!cloudConfigured) throw new Error('Cloud accounts are not configured. Your homes are saved on this device.');
  location.href = `${url}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(location.origin+'/homes.html')}`;

@@ -59,14 +59,14 @@ export class LayersPanel {
             </button>
             <div class="dropdown-menu" id="add-entity-menu">
               <div class="menu-label">Add Furniture</div>
-              <button class="menu-item" data-add="sofa">🛋️ Sofa</button>
-              <button class="menu-item" data-add="bed">🛏️ Bed</button>
-              <button class="menu-item" data-add="table">🪵 Dining Table</button>
-              <button class="menu-item" data-add="chair">🪑 Accent Chair</button>
-              <button class="menu-item" data-add="cabinet">🗄️ Cabinet / Sideboard</button>
-              <button class="menu-item" data-add="lamp">💡 Floor Lamp</button>
-              <button class="menu-item" data-add="decoration">🪴 Indoor Plant</button>
-              <button class="menu-item" data-add="appliance">🍳 Kitchen Appliance</button>
+              <button class="menu-item" data-add="sofa">Sofa</button>
+              <button class="menu-item" data-add="bed">Bed</button>
+              <button class="menu-item" data-add="table">Dining Table</button>
+              <button class="menu-item" data-add="chair">Accent Chair</button>
+              <button class="menu-item" data-add="cabinet">Cabinet / Sideboard</button>
+              <button class="menu-item" data-add="lamp">Floor Lamp</button>
+              <button class="menu-item" data-add="decoration">Indoor Plant</button>
+              <button class="menu-item" data-add="appliance">Kitchen Appliance</button>
             </div>
           </div>
           <button class="icon-button ${this.selected ? '' : 'disabled'}" id="btn-delete-entity" title="Delete Selected" ${this.selected ? '' : 'disabled'}>
@@ -132,34 +132,24 @@ export class LayersPanel {
           <button type="button" class="layer-item ${isSelected ? 'selected' : ''}" data-type="room" data-id="${room.id}" aria-pressed="${isSelected}">
             <span class="layer-icon">⬚</span>
             <span class="layer-label">${escapeHtml(room.name)}</span>
-            <span class="layer-sub">${room.type}</span>
+            <span class="layer-sub">${room.type.replaceAll('_', ' ')}</span>
           </button>
         `;
       }).join('');
   }
 
   private renderObjects(): string {
-    const icons: Record<string, string> = {
-      sofa: '🛋️',
-      bed: '🛏️',
-      table: '🪵',
-      chair: '🪑',
-      cabinet: '🗄️',
-      lamp: '💡',
-      appliance: '🍳',
-      decoration: '🪴',
-    };
+
 
     return this.project.interior.objects
       .filter(o => !this.filterQuery || o.assetId.toLowerCase().includes(this.filterQuery) || o.kind.includes(this.filterQuery))
       .map(obj => {
         const isSelected = this.selected?.type === 'object' && this.selected.id === obj.id;
-        const icon = icons[obj.kind] || '📦';
         return `
           <button type="button" class="layer-item ${isSelected ? 'selected' : ''}" data-type="object" data-id="${obj.id}" aria-pressed="${isSelected}">
-            <span class="layer-icon">${icon}</span>
-            <span class="layer-label">${obj.assetId || obj.kind}</span>
-            <span class="layer-sub">${obj.roomId ? obj.roomId.replace('room_', '') : ''}</span>
+            <span class="layer-icon furniture-kind-marker" aria-hidden="true"></span>
+            <span class="layer-label">${escapeHtml((obj.assetId || obj.kind).replaceAll('_', ' '))}</span>
+            <span class="layer-sub">${escapeHtml(this.project.building.rooms.find(room=>room.id===obj.roomId)?.name ?? '')}</span>
           </button>
         `;
       }).join('');

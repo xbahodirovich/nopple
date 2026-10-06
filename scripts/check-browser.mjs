@@ -50,7 +50,10 @@ try {
   await page.waitForFunction(() => document.querySelector('#scene-viewport').dataset.stage === '0');
   await page.waitForTimeout(1200);
   await page.getByRole('link', { name: 'Design your first home' }).click();
-  assert.equal(new URL(page.url()).hash, '#start');
+  assert.equal(new URL(page.url()).pathname, '/editor.html');
+  await page.goto('http://127.0.0.1:5173');
+  await page.locator('.is-ready').waitFor();
+  await page.locator('#start').scrollIntoViewIfNeeded();
   await page.getByRole('link', { name: 'Explore the demonstration' }).click();
   await page.waitForFunction(() => document.querySelector('#scene-viewport').dataset.stage === '2');
   assert.equal(new URL(page.url()).hash, '#demo');

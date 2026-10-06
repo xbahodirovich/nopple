@@ -13,3 +13,4 @@
 - Keep static generic share metadata; canonical absolute OG URLs are configured through VITE_SITE_URL at build time.
 
 - Merge develop_v1: preserve cloud saving, sharing, exports, hosted edit credentials/retry/quotas and multilingual prompt recognition while adopting reviewed briefs, multi-floor architectural generation, render gallery and solar/geolocation controls. New editor house prompts enter the reviewed brief workflow; ordinary edit prompts keep hosted AI with offline fallback.
+- Design review: preserve the incumbent black/mint palette, Inter, and reversible pinned house demonstration. Apply Taste to marketing and Impeccable to product workflows. Treat the requested unavailable Humanizer and 21st MCP as documented tool gaps and edit copy directly. Prefer immediate studio interactions and explicit, optional sun animation over decorative transitions.

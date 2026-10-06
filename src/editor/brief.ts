@@ -29,8 +29,8 @@ export function createBriefDialog(engine: MoppleProjectEngine, onCreated: () => 
   dialog.innerHTML = `
     <div class="brief-titlebar">
       <div>
-        <h2 id="brief-title">Design Discovery & Requirements</h2>
-        <span class="brief-subtitle" id="brief-status-badge">Conversational AI requirements discovery</span>
+        <h2 id="brief-title">Describe your home</h2>
+        <span class="brief-subtitle" id="brief-status-badge">Review your layout before generating</span>
       </div>
       <button type="button" class="btn btn-secondary" id="brief-close" aria-label="Close house brief">Close</button>
     </div>
@@ -43,14 +43,14 @@ export function createBriefDialog(engine: MoppleProjectEngine, onCreated: () => 
       </div>
     </div>
 
-    <p class="brief-intro">Mopple AI learns your complete architectural vision before generating any geometry. Fill in your details below, chat with the assistant to refine them, or type “no preference” where you want the architect to decide.</p>
+    <p class="brief-intro">Describe the home you need. Fill in the details or use the guided chat. Enter “No preference” for anything you want to leave open.</p>
 
     <div class="brief-view-tabs" role="tablist">
-      <button type="button" class="brief-tab active" id="brief-tab-form" role="tab" aria-selected="true">Structured Requirements</button>
-      <button type="button" class="brief-tab" id="brief-tab-chat" role="tab" aria-selected="false">Conversational Assistant</button>
+      <button type="button" class="brief-tab active" id="brief-tab-form" role="tab" aria-selected="true">Your requirements</button>
+      <button type="button" class="brief-tab" id="brief-tab-chat" role="tab" aria-selected="false">Guided chat</button>
     </div>
 
-    <!-- Conversational Assistant Panel -->
+    <!-- Guided chat Panel -->
     <div id="brief-assistant-panel" class="brief-assistant-panel" hidden>
       <div id="brief-chat-thread" class="brief-chat-thread" aria-live="polite"></div>
       <div class="brief-chat-bar">
@@ -88,15 +88,15 @@ export function createBriefDialog(engine: MoppleProjectEngine, onCreated: () => 
 
         <div class="brief-approval-box">
           <div class="brief-approval-header">
-            <span class="brief-approval-icon">🛡️</span>
-            <strong>Durable Approval & Verification</strong>
+
+            <strong>Your reviewed brief</strong>
           </div>
-          <p id="brief-token-preview" class="brief-token-text">An immutable approval token will be generated to bind this brief version to all downstream architectural plans and 3D scenes.</p>
+          <p id="brief-token-preview" class="brief-token-text">The reviewed requirements will be saved with your home.</p>
         </div>
 
-        <h3>Architectural Generation Scope</h3>
+        <h3>What the layout will include</h3>
         <ul id="brief-scope"></ul>
-        <p>Your complete brief travels with the project in <code>metadata.designBrief</code>. Replacing the current design creates an atomic revision that can be rewound with Undo.</p>
+        <p>Your requirements stay with the home. You can undo the generated layout if you want to return to your previous design.</p>
         <label class="brief-confirm">
           <input id="brief-confirm" type="checkbox"> I reviewed the brief and approve generating the architecture.
         </label>
@@ -251,7 +251,7 @@ export function createBriefDialog(engine: MoppleProjectEngine, onCreated: () => 
     const questions = generateDiscoveryQuestions(missing, conflicts);
 
     const reply = notes.length > 0
-      ? `Understood: ${notes.join(', ')}.\n\n${questions.length > 0 ? `Next question: ${questions[0]}` : 'All major requirements are now captured! Switch to Structured Requirements or click Review Brief to proceed.'}`
+      ? `Understood: ${notes.join(', ')}.\n\n${questions.length > 0 ? `Next question: ${questions[0]}` : 'All major requirements are now captured! Switch to Your requirements or click Review Brief to proceed.'}`
       : (questions[0] ?? 'Got it. Is there anything else you would like to include?');
 
     appendChatMessage('assistant', reply);
@@ -326,7 +326,7 @@ export function createBriefDialog(engine: MoppleProjectEngine, onCreated: () => 
           summary.append(dt, dd);
         }
 
-        get('brief-token-preview').textContent = `Approval Token: ${approved.approvalToken} (timestamped ${new Date().toLocaleTimeString()})`;
+        get('brief-token-preview').textContent = `Requirements reviewed at ${new Date().toLocaleTimeString()}. Saved with this home.`;
 
         get('brief-scope').replaceChildren(...conceptScope(approved).map(message => {
           const li = document.createElement('li');
@@ -431,10 +431,10 @@ export function createBriefDialog(engine: MoppleProjectEngine, onCreated: () => 
       const questions = generateDiscoveryQuestions(extracted.missing, extracted.conflicts);
       appendChatMessage(
         'assistant',
-        `Hello! I analyzed your request for a ${values.area}m² home with ${values.bedrooms} bedrooms and ${values.bathrooms} bathrooms.\n\n` +
+        `Your starting brief: ${values.area} m², ${values.bedrooms} bedrooms and ${values.bathrooms} bathrooms.\n\n` +
         (questions.length > 0
           ? `To make sure the design fits your vision, could you answer: ${questions[0]}`
-          : 'All core details are present! Feel free to add any specific materials or constraints, or review the brief.')
+          : 'The main details are filled in. Add any other requirements, or review your brief.')
       );
 
       updateStatusBadge();

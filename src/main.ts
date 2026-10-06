@@ -60,7 +60,7 @@ function measure() {
   scheduleScroll();
 }
 
-function select(stage: Stage) {
+function select(stage: Stage, keyboard = false) {
   if (failed) return;
   if (reducedMotion.matches) {
     updateStage(stage);
@@ -68,13 +68,14 @@ function select(stage: Stage) {
     visual.scrollIntoView({ behavior: 'instant', block: 'center' });
   } else {
     measure();
-    window.scrollTo({ top: scrollStart + STAGE_PROGRESS[stage] * scrollDistance, behavior: 'smooth' });
+    if(keyboard)controls?.select(stage);
+    window.scrollTo({ top: scrollStart + STAGE_PROGRESS[stage] * scrollDistance, behavior: keyboard ? 'instant' : 'smooth' });
   }
 }
 
 const listenerController = new AbortController();
 const { signal } = listenerController;
-stageButtons.forEach(button => button.addEventListener('click', () => select(Number(button.dataset.stage) as Stage), { signal }));
+stageButtons.forEach(button => button.addEventListener('click', event => select(Number(button.dataset.stage) as Stage, event.detail === 0), { signal }));
 document.querySelectorAll<HTMLAnchorElement>('[data-view]').forEach(link => link.addEventListener('click', event => {
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
   event.preventDefault();
@@ -83,7 +84,7 @@ document.querySelectorAll<HTMLAnchorElement>('[data-view]').forEach(link => link
     return;
   }
   history.replaceState(null, '', '#demo');
-  select(Number(link.dataset.view) as Stage);
+  select(Number(link.dataset.view) as Stage, event.detail === 0);
 }, { signal }));
 document.querySelector('.scroll-link')!.addEventListener('click', event => {
   if (reducedMotion.matches || failed) return;

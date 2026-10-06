@@ -37,21 +37,21 @@ export function createRenderGalleryDialog(
   dialog.innerHTML = `
     <div class="gallery-titlebar">
       <div>
-        <h2 id="gallery-title">Interior & Exterior Gallery</h2>
-        <span class="gallery-subtitle" id="gallery-status-badge">Geometry-grounded architectural visualizations</span>
+        <h2 id="gallery-title">Views of your home</h2>
+        <span class="gallery-subtitle" id="gallery-status-badge">Room and exterior views from your current design</span>
       </div>
       <div class="gallery-header-actions">
-        <button type="button" class="btn btn-secondary btn-sm" id="gallery-btn-export-plan">Export Render Package (.json)</button>
-        <button type="button" class="btn btn-primary btn-sm" id="gallery-btn-capture-all">Capture All Views</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="gallery-btn-export-plan">Export view details</button>
+        <button type="button" class="btn btn-primary btn-sm" id="gallery-btn-capture-all">Capture all views</button>
         <button type="button" class="btn btn-secondary" id="gallery-btn-close" aria-label="Close render gallery">Close</button>
       </div>
     </div>
 
     <div class="gallery-provider-notice" id="gallery-provider-notice">
-      <span class="notice-icon">📷</span>
+
       <div class="notice-content">
-        <strong>Geometry-Grounded Scene Previews</strong>
-        <p>Capture rooms, the street perspective, and all four facades from the same saved model and sunlight settings. Street and room cameras use a 1.6m eye level; facade views frame the full building. Front is the +Z side of the model. Download previews and prompts for further rendering.</p>
+        <strong>Capture your current design</strong>
+        <p>Save views of each room and every side of the home, using your current materials and sunlight. These are 3D scene captures.</p>
       </div>
     </div>
 
@@ -67,7 +67,7 @@ export function createRenderGalleryDialog(
       <div class="lightbox-content">
         <div id="lightbox-image-slot"></div>
         <div class="lightbox-caption" id="lightbox-caption"></div>
-        <button type="button" class="btn btn-secondary btn-sm" id="lightbox-close">Close Preview</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="lightbox-close">Close preview</button>
       </div>
     </div>
   `;
@@ -169,11 +169,11 @@ export function createRenderGalleryDialog(
           ${state.imageUrl
             ? `<img src="${state.imageUrl}" alt="${escapeHtml(state.roomName)} viewpoint" class="card-img" />`
             : `<div class="card-img-placeholder">
-                 <span class="placeholder-icon">📐</span>
+
                  <span>Ready to capture</span>
                </div>`
           }
-          <span class="card-badge ${state.status}">${state.status === 'complete' ? 'Rendered' : 'Grounded 3D'}</span>
+          <span class="card-badge ${state.status}">${state.status === 'complete' ? 'Rendered' : 'Scene view'}</span>
         </div>
         <div class="card-body">
           ${state.error ? `<p class="gallery-card-error" role="alert">${escapeHtml(state.error)}</p>` : ""}
@@ -184,10 +184,10 @@ export function createRenderGalleryDialog(
           <p class="card-dimensions">${state.dimensions.width.toFixed(2)}m × ${state.dimensions.depth.toFixed(2)}m × ${state.dimensions.height.toFixed(2)}m · ${state.exteriorView && state.exteriorView !== "street" ? "Facade perspective" : "Eye level 1.6m"} · Sun ${state.sunAzimuth}°/${state.sunElevation}°</p>
           <div class="card-prompt-preview" title="${escapeHtml(state.prompt)}">${escapeHtml(state.prompt)}</div>
           <div class="card-actions">
-            <button type="button" class="btn btn-secondary btn-sm btn-card-capture">Capture View</button>
+            <button type="button" class="btn btn-secondary btn-sm btn-card-capture">Capture view</button>
             ${state.imageUrl ? `<button type="button" class="btn btn-secondary btn-sm btn-card-view">View Full</button>` : ''}
             ${state.imageUrl ? `<button type="button" class="btn btn-secondary btn-sm btn-card-download">Download</button>` : ''}
-            <button type="button" class="btn btn-secondary btn-sm btn-card-copy">Copy Prompt</button>
+            <button type="button" class="btn btn-secondary btn-sm btn-card-copy">Copy render prompt</button>
           </div>
         </div>
       `;

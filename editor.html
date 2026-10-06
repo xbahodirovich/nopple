@@ -21,7 +21,7 @@
       <div class="view-switcher" role="tablist" aria-label="Design view">
         <button class="view-tab" id="tab-2d" data-view="2d" role="tab" aria-controls="pane-2d" title="Architecture Plan (Shortcut: 1)">2D Plan</button>
         <button class="view-tab active" id="tab-split" data-view="split" role="tab" aria-controls="pane-2d pane-3d" title="Dual Synchronized View (Shortcut: 2)">Split View</button>
-        <button class="view-tab" id="tab-3d" data-view="3d" role="tab" aria-controls="pane-3d" title="3D Realistic View (Shortcut: 3)">3D Scene</button>
+        <button class="view-tab" id="tab-3d" data-view="3d" role="tab" aria-controls="pane-3d" title="3D Scene View (Shortcut: 3)">3D Scene</button>
       </div>
 
       <div class="nav-actions"><a href="/homes.html" class="btn btn-secondary">My homes</a>
@@ -39,7 +39,7 @@
           </button>
         </div>
 
-        <button class="icon-button" id="btn-solar" title="Heliodon Solar Study & Sun Path (Shortcut: S)">
+        <button class="icon-button" id="btn-solar" title="Sun & shadows & Sun Path (Shortcut: S)">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
         </button>
         <button class="icon-button" id="btn-import" title="Import .mopple project">
@@ -98,12 +98,12 @@
         <div class="solar-floating-hud" id="solar-study-panel" style="display: none;" role="region" aria-label="Solar Study">
           <div class="solar-hud-header">
             <div class="solar-hud-title">
-              <span class="solar-hud-icon">☀️</span>
-              <span>Heliodon Solar Study</span>
+
+              <span>Sun & shadows</span>
             </div>
             <div class="solar-hud-actions">
-              <button class="solar-btn-icon" id="solar-timelapse-btn" title="Toggle 24-Hour Solar Timelapse Animation">▶ Play</button>
-              <button class="solar-btn-icon" id="solar-close-btn" title="Close Solar Panel">✕</button>
+              <button class="solar-btn-icon" id="solar-timelapse-btn" title="Toggle 24-Hour Solar Timelapse Animation">Play</button>
+              <button class="solar-btn-icon" id="solar-close-btn" title="Close Solar Panel">Close</button>
             </div>
           </div>
 
@@ -197,11 +197,11 @@
               <button class="ai-chip" id="btn-house-brief" type="button">House brief</button>
               <button class="ai-chip" id="btn-render-plan" type="button" disabled title="Export saved requirements and interior and exterior render jobs">Render plan</button>
               <button class="ai-chip" id="btn-open-gallery" type="button" title="View Studio Render Gallery with geometry-grounded interior, exterior and street views">Render gallery</button>
-              <button class="ai-chip" data-prompt="make the bedroom larger by 1m">✨ Make bedroom larger</button>
-              <button class="ai-chip" data-prompt="replace the sofa with a dining table">🔄 Replace sofa with table</button>
-              <button class="ai-chip" data-prompt="change living room floor to dark oak">🪵 Floor to dark oak</button>
-              <button class="ai-chip" data-prompt="set warm evening lighting mood">🌅 Evening lighting</button>
-              <button class="ai-chip" data-prompt="add an indoor plant">🪴 Add plant</button>
+              <button class="ai-chip" data-prompt="make the bedroom larger by 1m">Make bedroom larger</button>
+              <button class="ai-chip" data-prompt="replace the sofa with a dining table">Replace sofa with table</button>
+              <button class="ai-chip" data-prompt="change living room floor to dark oak">Floor to dark oak</button>
+              <button class="ai-chip" data-prompt="set warm evening lighting mood">Evening lighting</button>
+              <button class="ai-chip" data-prompt="add an indoor plant">Add plant</button>
             </div>
             <button class="ai-engine-badge" id="ai-engine-badge" type="button" title="Click to configure NVIDIA NIM (GLM 5.3 Flash) API Key & Model">
               <span class="engine-badge-dot"></span>

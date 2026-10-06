@@ -560,6 +560,8 @@ export function initEditor() {
         updateSolarUI();
       }
     }
+    if(!isSolarOpen){canvas3d?.stopTimelapse();isTimelapsePlaying=false;if(solarTimelapseBtn)solarTimelapseBtn.textContent='Play';}
+    btnSolar?.setAttribute('aria-expanded',String(isSolarOpen));hudSolarToggle?.setAttribute('aria-expanded',String(isSolarOpen));
     btnSolar?.classList.toggle('active', isSolarOpen);
     hudSolarToggle?.classList.toggle('active', isSolarOpen);
   }
@@ -609,17 +611,29 @@ export function initEditor() {
       updateSolarUI();
     });
     if (solarTimelapseBtn) {
-      solarTimelapseBtn.textContent = isTimelapsePlaying ? '⏸ Pause' : '▶ Play';
+      solarTimelapseBtn.textContent = isTimelapsePlaying ? 'Pause' : 'Play';
     }
   });
+
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  function syncSolarMotion() {
+    if(!solarTimelapseBtn)return;
+    solarTimelapseBtn.disabled=reducedMotion.matches;
+    solarTimelapseBtn.title=reducedMotion.matches?'Animated sun study is disabled by your reduced-motion setting. Use the time controls instead.':'Play a 24-hour sun study';
+    if(reducedMotion.matches){canvas3d?.stopTimelapse();isTimelapsePlaying=false;solarTimelapseBtn.textContent='Play';}
+  }
+  syncSolarMotion();reducedMotion.addEventListener('change',syncSolarMotion,{signal:events.signal});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden){canvas3d?.stopTimelapse();isTimelapsePlaying=false;if(solarTimelapseBtn)solarTimelapseBtn.textContent='Play';}},{signal:events.signal});
 
   // Global Keyboard Shortcuts
   window.addEventListener('keydown', e => {
     const target = e.target as HTMLElement;
     if (apiKeyModal.classList.contains('show') || briefDialog.open || renderGallery.dialog.open) return;
+    if(e.key==='Escape' && isSolarOpen){toggleSolarPanel(false);hudSolarToggle?.focus();return;}
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
       return;
     }
+
 
     // S: Toggle Solar Study
     if (e.key.toLowerCase() === 's' && !e.metaKey && !e.ctrlKey) {

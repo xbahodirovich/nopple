@@ -18,7 +18,7 @@ export function mountHeroScene(container: HTMLElement, options: {
   renderer.setPixelRatio(Math.min(devicePixelRatio, compact ? 1.35 : 1.75));
   renderer.setClearColor(0x000000, 0);
   renderer.shadowMap.enabled = !compact;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.28;
