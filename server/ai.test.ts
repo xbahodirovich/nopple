@@ -14,7 +14,7 @@ async function request(response: Response, operationsPrompt = 'move the sofa lef
   res.writeHead = ((code: number) => { status = code; return res; }) as ServerResponse['writeHead'];
   res.end = ((data: string) => { body = data; return res; }) as ServerResponse['end'];
   let upstreamBody = '';
-  await handleAiRequest(req, res, async (_url, init) => { upstreamBody = String(init?.body); return response; });
+  await handleAiRequest(req, res, async (_url, init) => { upstreamBody = String(init?.body); return response.clone(); });
   return { status, body, upstreamBody };
 }
 const answer = (operations: unknown) => new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(operations) } }] }));

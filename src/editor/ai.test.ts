@@ -160,15 +160,15 @@ test('house creation builds exact requested room counts and area, and supports u
   e.undo(); assert.deepEqual(e.getSnapshot(), p);
 });
 
-test('API failure never falls back to a different edit; stale responses never overwrite new work', async () => {
+test('API failure uses the offline engine; stale responses never overwrite new work', async () => {
   const { executeAiPrompt, setStoredApiKey } = await import('./ai.ts');
   const original = globalThis.fetch; const e = new MoppleProjectEngine(parseProject(example));
   setStoredApiKey('nvapi-test');
   try {
     globalThis.fetch = async () => new Response(JSON.stringify({ error: 'Invalid API key' }), { status: 401 });
-    const before = e.saveProject();
-    await assert.rejects(executeAiPrompt('move the sofa left', e), /Invalid API key/);
-    assert.equal(e.saveProject(), before);
+    const result = await executeAiPrompt('move the sofa left', e);
+    assert.equal(result.source, 'local_semantic');
+    assert.match(result.message, /Invalid API key/);
     let resolveRequest: (response: Response) => void = () => {};
     globalThis.fetch = () => new Promise(resolve => { resolveRequest = resolve; });
     const request = executeAiPrompt('move the sofa left', e);

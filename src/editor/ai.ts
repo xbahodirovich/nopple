@@ -45,11 +45,12 @@ export async function executeAiPrompt(prompt: string, engine: MoppleProjectEngin
     const apiKey = getStoredApiKey(), model = getStoredModel(), revision = engine.revision;
     const project = engine.getSnapshot();
     let operations: MoppleOperations;
-    if (apiKey) {
+    let hosted = false, fallbackReason = '';
+    try {
       let response: Response;
       try {
         response = await fetch('/api/ai/operations', {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+          method: 'POST', headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
           body: JSON.stringify({ prompt: text, project, selectedId, model }), signal: AbortSignal.timeout(95000),
         });
       } catch (error) {
@@ -61,8 +62,9 @@ export async function executeAiPrompt(prompt: string, engine: MoppleProjectEngin
         const detail = body && typeof body === 'object' && 'error' in body && typeof body.error === 'string' ? body.error : 'AI endpoint unavailable. Start Mopple with npm run dev or npm start.';
         throw new Error(detail);
       }
-      operations = sanitizeOperations(body, project);
-    } else {
+      operations = sanitizeOperations(body, project); hosted = true;
+    } catch (error) {
+      fallbackReason = error instanceof Error ? error.message : 'Hosted AI unavailable';
       const interpreted = interpretPromptLocally(text, project, selectedId);
       if (!interpreted.length) throw new Error('Offline commands support creating a house, resizing a room, moving/adding furniture, materials and lighting. Rephrase the request or connect NVIDIA NIM.');
       operations = validateOperations({ operations: interpreted });
@@ -70,10 +72,10 @@ export async function executeAiPrompt(prompt: string, engine: MoppleProjectEngin
     if (engine.revision !== revision) throw new Error('The project changed while AI was working. Nothing was applied; submit again using the current design.');
     if (operations.operations.some(o => o.type === 'create_house') && !isHouseRequest(text)) throw new Error('AI proposed replacing your house for an ordinary edit. Nothing was applied; rephrase the request.');
     engine.applyOperations(operations);
-    return { success: true, message: `Applied ${operations.operations.length} operation(s)${apiKey ? ` via ${model}` : ' offline'}. Undo is available.`, operationsCount: operations.operations.length, source: apiKey ? 'nvidia_nim' : 'local_semantic', model: apiKey ? model : undefined };
+    return { success: true, message: `Applied ${operations.operations.length} operation(s)${hosted ? ` via ${model}` : ` offline. ${fallbackReason}`}. Undo is available.`, operationsCount: operations.operations.length, source: hosted ? 'nvidia_nim' : 'local_semantic', model: hosted ? model : undefined };
   } finally { busyEngines.delete(engine); }
 }
-export function isHouseRequest(text: string): boolean { return /\b(create|generate|build|design)\b.*\b(house|home|apartment|villa)\b/i.test(text); }
+export function isHouseRequest(text: string): boolean { return /\b(create|generate|build|design)\b.*\b(house|home|apartment|villa)\b/i.test(text) || /(?:дом|квартир).*(?:созд|сдел|спроект)|(?:созд|сдел|спроект).*(?:дом|квартир)|(?:uy|xonadon|kvartira).*(?:yarat|qur|loyiha)|(?:yarat|qur|loyiha).*(?:uy|xonadon|kvartira)/i.test(text); }
 const freshId = (prefix: string) => `${prefix}_${globalThis.crypto.randomUUID()}`;
 
 /**
@@ -84,7 +86,7 @@ export function interpretPromptLocally(
   project: MoppleProject,
   selectedId?: string
 ): MoppleOperation[] {
-  const p = prompt.toLowerCase();
+  const p = normalizePrompt(prompt);
   const ops: MoppleOperation[] = [];
   const rooms = project.building.rooms;
   const objects = project.interior.objects;
@@ -377,3 +379,10 @@ export function sanitizeOperations(raw: unknown, _project: MoppleProject): Moppl
   return validateOperations(raw);
 }
 export const sanitizeGeminiOperations = sanitizeOperations;
+
+export function normalizePrompt(prompt: string): string {
+ let text = prompt.toLowerCase();
+ const terms: [RegExp,string][] = [[/создай|создать|спроектируй|yarat|loyihala/g,'create'],[/квартиру|квартира|дом|xonadon|kvartira|\buy\b/g,'house'],[/спальни|спальнями|спальня|yotoq(?:xona)?/g,'bedrooms'],[/ванными|ванных|ванная|санузла|hammom/g,'bathrooms'],[/кв\.?\s*м|м²|м2|kvadrat metr/g,'sqm'],[/кухн[яю]|oshxona/g,'kitchen'],[/гостин[аяую]+|mehmonxona/g,'living room'],[/добавь|добавить|qo.sh/g,'add'],[/диван|divan/g,'sofa'],[/уютн[а-я]*|shinam/g,'cozy'],[/освещение|yorug.lik/g,'lighting'],[/бел[а-я]*|oq/g,'white'],[/стены|стен|devor/g,'walls'],[/полы|пол|pol/g,'floor']];
+ for (const [pattern,value] of terms) text = text.replace(pattern, value);
+ return text;
+}
