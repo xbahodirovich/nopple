@@ -1,5 +1,5 @@
 import { projectSchema, CURRENT_VERSION, FORMAT, type MoppleProject } from './schema.ts';
-import { distance, EPSILON, isSimplePolygon, samePoint } from './geometry.ts';
+import { distance, EPSILON, isSimplePolygon, samePoint, polygonArea, roomPolygon, polygonsOverlap } from './geometry.ts';
 
 export interface ValidationIssue { path: string; message: string }
 export class MoppleValidationError extends Error {
@@ -88,6 +88,12 @@ export function validateProject(input: unknown): MoppleProject {
   }
   for (const light of p.lighting) {
     if (light.type === 'directional' && light.position.x === light.target.x && light.position.y === light.target.y && light.position.z === light.target.z) fail(light.id, 'Directional light needs a nonzero direction');
+  }
+  if (!issues.length) {
+    for (const r of rooms) if (polygonArea(roomPolygon(p, r)) < (r.type === 'hallway' ? 1 : 2)) fail(r.id, 'Room is below the minimum concept area (2 m²; hallway 1 m²)');
+    for (let i = 0; i < rooms.length; i++) for (let j = i + 1; j < rooms.length; j++) {
+      if (rooms[i].floorId === rooms[j].floorId && polygonsOverlap(roomPolygon(p, rooms[i]), roomPolygon(p, rooms[j]))) fail(rooms[j].id, `Room overlaps ${rooms[i].name}`);
+    }
   }
   if (issues.length) throw new MoppleValidationError(issues);
   return p;

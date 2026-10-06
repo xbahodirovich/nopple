@@ -47,3 +47,22 @@ export function polygonArea(points: Point[]): number {
   }
   return Math.abs(twiceArea) / 2;
 }
+
+/** Strict interior test: shared boundary points do not count as overlap. */
+export function insidePolygon(p: Point, polygon: Point[]): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[i], b = polygon[j];
+    if (onSegment(a, b, p)) return false;
+    if ((a.z > p.z) !== (b.z > p.z) && p.x < (b.x - a.x) * (p.z - a.z) / (b.z - a.z) + a.x) inside = !inside;
+  }
+  return inside;
+}
+export function polygonsOverlap(a: Point[], b: Point[]): boolean {
+  if (a.some(p => insidePolygon(p, b)) || b.some(p => insidePolygon(p, a))) return true;
+  for (let i = 0; i < a.length; i++) for (let j = 0; j < b.length; j++) {
+    const p = a[i], q = a[(i+1)%a.length], r = b[j], s = b[(j+1)%b.length];
+    if (cross(p,q,r)*cross(p,q,s) < -EPSILON && cross(r,s,p)*cross(r,s,q) < -EPSILON) return true;
+  }
+  return a.every(p => b.some(q => samePoint(p,q))) && a.length === b.length;
+}
