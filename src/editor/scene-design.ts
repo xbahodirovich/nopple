@@ -2,6 +2,13 @@ import * as THREE from 'three';
 import type { MoppleProject, MoppleMaterial } from '../project/schema.ts';
 import { createProjectViews } from '../project/adapters.ts';
 import { createFurnitureMesh } from './furniture.ts';
+import {
+  getWoodPlankTexture,
+  getMarbleTexture,
+  getTileTexture,
+  getPlasterBumpTexture,
+  getLawnTexture,
+} from './textures.ts';
 
 export function disposeTree(root: THREE.Object3D): void {
   const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
@@ -20,29 +27,110 @@ export function buildDesignScene(project: MoppleProject) {
   const building = new THREE.Group(), furniture = new THREE.Group(), lighting = new THREE.Group();
   const definitions = new Map(project.materials.map(m => [m.id, m]));
   const cache = new Map<string, THREE.MeshStandardMaterial>();
-  function material(id?: string, color = '#ded9cf') {
-    const key = id ?? color;
+  function material(id?: string, color = '#ded9cf', kind: 'floor' | 'wall' | 'other' = 'other') {
+    const key = `${id ?? color}_${kind}`;
     let result = cache.get(key);
     if (!result) {
       const m: MoppleMaterial | undefined = id ? definitions.get(id) : undefined;
       const opacity = m?.opacity ?? (color === '#a8c6be' ? .3 : 1);
-      result = new THREE.MeshStandardMaterial({ color: m?.color ?? color, roughness: m?.roughness ?? .8, metalness: m?.metalness ?? 0, opacity, transparent: opacity < 1, side: THREE.DoubleSide });
+      const cat = m?.kind?.toLowerCase() || '';
+      const name = (m?.name || id || '').toLowerCase();
+
+      let map: THREE.Texture | null = null;
+      let bumpMap: THREE.Texture | null = null;
+      let bumpScale = 0;
+      let roughness = m?.roughness ?? 0.8;
+      let metalness = m?.metalness ?? 0;
+
+      if (cat === 'wood' || name.includes('wood') || name.includes('oak') || name.includes('parquet')) {
+        map = getWoodPlankTexture(m?.color ?? color, 3, 3);
+        roughness = m?.roughness ?? 0.45;
+      } else if (cat === 'stone' || name.includes('stone') || name.includes('marble') || name.includes('granite')) {
+        map = getMarbleTexture(2, 2);
+        roughness = m?.roughness ?? 0.25;
+      } else if (cat === 'tile' || name.includes('tile') || name.includes('slate') || name.includes('ceramic')) {
+        map = getTileTexture(m?.color ?? color, 4, 4);
+        roughness = m?.roughness ?? 0.35;
+      } else if (kind === 'wall' || cat === 'wall' || name.includes('wall') || name.includes('plaster')) {
+        bumpMap = getPlasterBumpTexture();
+        bumpScale = 0.0025;
+        roughness = m?.roughness ?? 0.88;
+      } else if (cat === 'glass' || name.includes('glass') || color === '#a8c6be') {
+        roughness = m?.roughness ?? 0.05;
+        metalness = m?.metalness ?? 0.1;
+      }
+
+      result = new THREE.MeshStandardMaterial({
+        color: m?.color ?? color,
+        roughness,
+        metalness,
+        opacity,
+        transparent: opacity < 1,
+        side: THREE.DoubleSide,
+        ...(map ? { map } : {}),
+        ...(bumpMap ? { bumpMap, bumpScale } : {})
+      });
       cache.set(key, result);
     }
     return result;
   }
+
+  // Architectural site ground plinth (procedural grass)
+  const siteSize = 64;
+  const groundGeo = new THREE.BoxGeometry(siteSize, 0.4, siteSize);
+  const groundMat = new THREE.MeshStandardMaterial({
+    color: '#223326',
+    roughness: 0.9,
+    metalness: 0.05,
+    map: getLawnTexture(8),
+  });
+  const groundMesh = new THREE.Mesh(groundGeo, groundMat);
+  groundMesh.name = 'site_ground_plinth';
+  groundMesh.position.y = -0.32;
+  groundMesh.receiveShadow = true;
+  building.add(groundMesh);
+
   for (const room of views.rooms) {
     const shape = new THREE.Shape(room.polygon.map(p => new THREE.Vector2(p.x, -p.z)));
     const floor = views.floors.find(f => f.id === room.floorId)!;
-    const mesh = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: .12, bevelEnabled: false }), material(room.materials?.floor, '#c4b59f'));
-    mesh.rotation.x = -Math.PI / 2; mesh.position.y = floor.elevation - .12;
-    mesh.receiveShadow = true; mesh.userData = { roomId: room.id, floorId: floor.id }; building.add(mesh);
+    // Floor slab
+    const floorMesh = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: .12, bevelEnabled: false }), material(room.materials?.floor, '#c4b59f', 'floor'));
+    floorMesh.rotation.x = -Math.PI / 2; floorMesh.position.y = floor.elevation - .12;
+    floorMesh.receiveShadow = true; floorMesh.userData = { roomId: room.id, floorId: floor.id }; building.add(floorMesh);
+
+    // Ceiling slab
+    const ceilMesh = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: .08, bevelEnabled: false }), material(room.materials?.wall, '#ded9cf', 'wall'));
+    ceilMesh.rotation.x = -Math.PI / 2; ceilMesh.position.y = floor.elevation + room.height;
+    ceilMesh.receiveShadow = true; ceilMesh.userData = { isCeiling: true, ceilingRoomId: room.id, floorId: floor.id };
+    building.add(ceilMesh);
   }
+
+  // Top roof structure covering the building
+  if (views.rooms.length > 0) {
+    const allPoints = views.rooms.flatMap(r => r.polygon);
+    const xs = allPoints.map(p => p.x), zs = allPoints.map(p => p.z);
+    const minX = Math.min(...xs), maxX = Math.max(...xs), minZ = Math.min(...zs), maxZ = Math.max(...zs);
+    const topFloor = views.floors.reduce((max, f) => (f.elevation > max.elevation ? f : max), views.floors[0]);
+    const roofY = topFloor ? topFloor.elevation + topFloor.height + 0.1 : 3.0;
+
+    const roofWidth = (maxX - minX) + 0.7;
+    const roofDepth = (maxZ - minZ) + 0.7;
+    const roofGeo = new THREE.BoxGeometry(roofWidth, 0.22, roofDepth);
+    const roofMat = material('house_stone', '#363d3a', 'other');
+    const roofMesh = new THREE.Mesh(roofGeo, roofMat);
+    roofMesh.position.set((minX + maxX) / 2, roofY + 0.11, (minZ + maxZ) / 2);
+    roofMesh.castShadow = true;
+    roofMesh.receiveShadow = true;
+    roofMesh.name = 'building_roof';
+    roofMesh.userData = { isRoof: true };
+    building.add(roofMesh);
+  }
+
   for (const wall of views.walls) {
-    const group = new THREE.Group(); group.name = wall.id;
+    const group = new THREE.Group(); group.name = wall.id; group.userData.floorId = wall.floorId;
     group.position.set(wall.start.x, wall.baseElevation, wall.start.z); group.rotation.y = wall.rotationY;
     const room = views.rooms.find(r => r.boundary.some(e => e.wallId === wall.id));
-    const wallMaterial = material(wall.materialId ?? room?.materials?.wall);
+    const wallMaterial = material(wall.materialId ?? room?.materials?.wall, '#ded9cf', 'wall');
     function box(x0: number, x1: number, y0: number, y1: number, thickness: number, mat: THREE.Material, selectable = false) {
       if (x1 - x0 <= 1e-7 || y1 - y0 <= 1e-7) return;
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, y1 - y0, thickness), mat);
@@ -59,13 +147,20 @@ export function buildDesignScene(project: MoppleProject) {
     }
     for (const opening of holes) {
       const { left, right, bottom, top } = opening;
-      if (opening.kind === 'door') box(left, right, bottom, top, .04, material(opening.materialId, '#8c6e52'));
-      else {
+      if (opening.kind === 'door') {
+        // Door frame and door panel with metallic handle
+        const frameMat = material(undefined, '#293531');
+        const doorPanelMat = material(opening.materialId, '#8c6e52');
+        box(left, right, bottom, top, .04, doorPanelMat);
+        box(left, left + 0.05, bottom, top, .07, frameMat);
+        box(right - 0.05, right, bottom, top, .07, frameMat);
+        box(left, right, top - 0.05, top, .07, frameMat);
+      } else {
         const frame = Math.min(.04, opening.width / 4, opening.height / 4);
         const frameMaterial = material(undefined, '#293531');
         box(left, left + frame, bottom, top, .07, frameMaterial); box(right - frame, right, bottom, top, .07, frameMaterial);
         box(left + frame, right - frame, bottom, bottom + frame, .07, frameMaterial); box(left + frame, right - frame, top - frame, top, .07, frameMaterial);
-        box(left + frame, right - frame, bottom + frame, top - frame, .02, material(opening.materialId, '#a8c6be'));
+        box(left + frame, right - frame, bottom + frame, top - frame, .02, material(opening.materialId ?? 'house_glass', '#a8c6be'));
       }
     }
     building.add(group);

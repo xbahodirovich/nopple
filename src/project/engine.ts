@@ -1,4 +1,4 @@
-import { CURRENT_VERSION, FORMAT, type MoppleDoor, type MoppleFloor, type MoppleInteriorObject, type MoppleLight, type MoppleMaterial, type MoppleProject, type MoppleRoom, type MoppleWall, type MoppleWindow, type Point, type Vector } from './schema.ts';
+import { CURRENT_VERSION, FORMAT, type MoppleDoor, type MoppleFloor, type MoppleGeo, type MoppleInteriorObject, type MoppleLight, type MoppleMaterial, type MoppleProject, type MoppleRoom, type MoppleWall, type MoppleWindow, type Point, type Vector } from './schema.ts';
 import { createHouseDesign } from './house.ts';
 import { roomPolygon, samePoint } from './geometry.ts';
 import { type MoppleOperation, validateOperations } from './operations.ts';
@@ -92,6 +92,9 @@ function apply(p: MoppleProject, op: MoppleOperation) {
     }
     case 'change_room_style': find(b.rooms, op.targetId).style = op.style; break;
     case 'update_lighting': p.lighting = op.lights; break;
+    case 'update_sun': p.metadata.sun = op.sun; break;
+    case 'update_design_brief': p.metadata.designBrief = op.brief; break;
+    case 'update_geo': p.metadata.geo = op.geo; break;
     default: { const exhaustive: never = op; return exhaustive; }
   }
 }
@@ -213,4 +216,6 @@ export class MoppleProjectEngine {
   changeRoomStyle(targetId: string, style: string) { this.#run({ type: 'change_room_style', targetId, style }); }
   changeMaterial(material: MoppleMaterial) { this.#run({ type: 'change_material', material }); }
   updateLighting(lights: MoppleLight[]) { this.#run({ type: 'update_lighting', lights }); }
+  updateGeo(geo: MoppleGeo) { this.#run({ type: 'update_geo', geo }); }
+  getGeo(): MoppleGeo | undefined { return this.#project.metadata.geo ? structuredClone(this.#project.metadata.geo) : undefined; }
 }

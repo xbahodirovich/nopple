@@ -8,6 +8,9 @@
   "functions": {
     "api/ai/operations.ts": {
       "maxDuration": 120
+    },
+    "api/ai/generate.ts": {
+      "maxDuration": 120
     }
   }
 }

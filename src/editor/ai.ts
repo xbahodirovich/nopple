@@ -39,6 +39,7 @@ const busyEngines = new WeakSet<MoppleProjectEngine>();
 export async function executeAiPrompt(prompt: string, engine: MoppleProjectEngine, selectedId?: string): Promise<AIExecutionResult> {
   const text = prompt.trim();
   if (!text) throw new Error('Enter a design request first.');
+  if (isHouseRequest(text)) throw new Error('Complete and review the house brief before creating a starter concept.');
   if (busyEngines.has(engine)) throw new Error('A request is already running. Wait for it to finish.');
   busyEngines.add(engine);
   try {
@@ -70,12 +71,12 @@ export async function executeAiPrompt(prompt: string, engine: MoppleProjectEngin
       operations = validateOperations({ operations: interpreted });
     }
     if (engine.revision !== revision) throw new Error('The project changed while AI was working. Nothing was applied; submit again using the current design.');
-    if (operations.operations.some(o => o.type === 'create_house') && !isHouseRequest(text)) throw new Error('AI proposed replacing your house for an ordinary edit. Nothing was applied; rephrase the request.');
+    if (operations.operations.some(o => o.type === 'create_house' || o.type === 'update_design_brief')) throw new Error('AI proposed replacing your house for an ordinary edit. Nothing was applied; rephrase the request.');
     engine.applyOperations(operations);
     return { success: true, message: `Applied ${operations.operations.length} operation(s)${hosted ? ` via ${model}` : ` offline. ${fallbackReason}`}. Undo is available.`, operationsCount: operations.operations.length, source: hosted ? 'nvidia_nim' : 'local_semantic', model: hosted ? model : undefined };
   } finally { busyEngines.delete(engine); }
 }
-export function isHouseRequest(text: string): boolean { if(/(?:i want|i need|i.d like|хочу|нужен|нужна|нужно|menga|kerak).*(?:home|house|apartment|дом|квартир|uy|xonadon)/i.test(text) || /(?:uy|xonadon).*(?:kerak)/i.test(text))return true; return /\b(create|generate|build|design)\b.*\b(house|home|apartment|villa)\b/i.test(text) || /(?:дом|квартир).*(?:созд|сдел|спроект)|(?:созд|сдел|спроект).*(?:дом|квартир)|(?:uy|xonadon|kvartira).*(?:yarat|qur|loyiha)|(?:yarat|qur|loyiha).*(?:uy|xonadon|kvartira)/i.test(text); }
+export function isHouseRequest(text: string): boolean { if (/\bmake\s+(?:it|the|this|my|our)\b/i.test(text)) return false; if(/(?:i want|i need|i.d like|хочу|нужен|нужна|нужно|menga|kerak).*(?:home|house|apartment|дом|квартир|uy|xonadon)/i.test(text) || /(?:uy|xonadon).*(?:kerak)/i.test(text))return true; return /\b(create|generate|build|design|make|plan)\b[\s\S]*\b(house|home|apartment|villa)\b/i.test(text) || /(?:дом|квартир).*(?:созд|сдел|спроект)|(?:созд|сдел|спроект).*(?:дом|квартир)|(?:uy|xonadon|kvartira).*(?:yarat|qur|loyiha)|(?:yarat|qur|loyiha).*(?:uy|xonadon|kvartira)/i.test(text); }
 const freshId = (prefix: string) => `${prefix}_${globalThis.crypto.randomUUID()}`;
 
 /**

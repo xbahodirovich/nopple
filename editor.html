@@ -39,6 +39,9 @@
           </button>
         </div>
 
+        <button class="icon-button" id="btn-solar" title="Heliodon Solar Study & Sun Path (Shortcut: S)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        </button>
         <button class="icon-button" id="btn-import" title="Import .mopple project">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         </button>
@@ -83,12 +86,117 @@
           <button class="icon-button" id="hud-view-top" title="Top Down 3D">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>
           </button>
+          <button class="icon-button" id="hud-view-cutaway" title="Cutaway 3D (Roof removed)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/></svg>
+          </button>
+          <button class="icon-button" id="hud-solar-toggle" title="Toggle Solar Study (S)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          </button>
+        </div>
+
+        <!-- Floating Solar Study HUD Panel -->
+        <div class="solar-floating-hud" id="solar-study-panel" style="display: none;" role="region" aria-label="Solar Study">
+          <div class="solar-hud-header">
+            <div class="solar-hud-title">
+              <span class="solar-hud-icon">☀️</span>
+              <span>Heliodon Solar Study</span>
+            </div>
+            <div class="solar-hud-actions">
+              <button class="solar-btn-icon" id="solar-timelapse-btn" title="Toggle 24-Hour Solar Timelapse Animation">▶ Play</button>
+              <button class="solar-btn-icon" id="solar-close-btn" title="Close Solar Panel">✕</button>
+            </div>
+          </div>
+
+          <div class="solar-hud-body">
+            <div class="solar-control-row">
+              <label for="sun-mode">Sun control</label>
+              <select id="sun-mode" class="input-select"><option value="manual">Manual direction</option><option value="solar">Date & solar time</option></select>
+            </div>
+            <div class="solar-control-row">
+              <div class="solar-slider-label"><label for="sun-azimuth">Direction · N 0° / E 90° / S 180° / W 270°</label><output id="sun-azimuth-value" for="sun-azimuth">225°</output></div>
+              <input id="sun-azimuth" class="solar-range" type="range" min="0" max="360" step="1" value="225">
+            </div>
+            <div class="solar-control-row">
+              <div class="solar-slider-label"><label for="sun-elevation">Sun height</label><output id="sun-elevation-value" for="sun-elevation">40°</output></div>
+              <input id="sun-elevation" class="solar-range" type="range" min="1" max="90" step="1" value="40">
+            </div>
+            <div class="solar-control-row">
+              <div class="solar-slider-label"><label for="sun-warmth">Sun warmth & color</label><output id="sun-warmth-value" for="sun-warmth">35%</output></div>
+              <input id="sun-warmth" class="solar-range" type="range" min="0" max="100" step="1" value="35">
+            </div>
+            <div class="solar-control-row">
+              <div class="solar-slider-label"><label for="sun-intensity">Sun intensity</label><output id="sun-intensity-value" for="sun-intensity">2.8</output></div>
+              <input id="sun-intensity" class="solar-range" type="range" min="0.5" max="5.0" step="0.1" value="2.8">
+            </div>
+            <!-- Digital Time & Sun Altitude Status -->
+            <div class="solar-readout-row">
+              <div class="solar-digital-clock">
+                <span class="clock-time" id="solar-clock-display">14:00</span>
+                <span class="clock-period" id="solar-period-badge">Daylight</span>
+              </div>
+              <div class="solar-quick-times">
+                <button class="solar-pill-btn" data-time="6.5">Dawn</button>
+                <button class="solar-pill-btn" data-time="12.0">Noon</button>
+                <button class="solar-pill-btn" data-time="17.5">Golden</button>
+                <button class="solar-pill-btn" data-time="22.0">Night</button>
+              </div>
+            </div>
+
+            <!-- Time Slider -->
+            <div class="solar-control-row" data-solar-auto>
+              <div class="solar-slider-label">
+                <span>Time of Day</span>
+                <span id="solar-time-label" class="solar-val-text">14:00</span>
+              </div>
+              <input type="range" id="solar-time-slider" min="0" max="24" step="0.1" value="14" class="solar-range" />
+            </div>
+
+            <!-- Day of Year / Season Slider -->
+            <div class="solar-control-row" data-solar-auto>
+              <div class="solar-slider-label">
+                <span>Season / Solstice</span>
+                <span id="solar-date-label" class="solar-val-text">Jun 21 (Summer)</span>
+              </div>
+              <input type="range" id="solar-date-slider" min="1" max="365" step="1" value="172" class="solar-range" />
+            </div>
+
+            <!-- Solar Arc & Options -->
+            <div class="solar-options-row" data-solar-auto>
+              <label class="solar-checkbox-label">
+                <input type="checkbox" id="solar-heliodon-check" />
+                <span>Show 3D Sun Path Arcs</span>
+              </label>
+            </div>
+
+            <!-- Solar Metrics Grid -->
+            <div class="solar-metrics-grid">
+              <div class="solar-metric-card">
+                <span class="metric-label">Elevation</span>
+                <span class="metric-value" id="solar-elevation-val">58.4°</span>
+              </div>
+              <div class="solar-metric-card">
+                <span class="metric-label">Azimuth</span>
+                <span class="metric-value" id="solar-azimuth-val">198.2°</span>
+              </div>
+              <div class="solar-metric-card">
+                <span class="metric-label">Sunrise / Sunset</span>
+                <span class="metric-value" id="solar-daylight-val">04:45 — 21:18</span>
+              </div>
+              <div class="solar-metric-card">
+                <span class="metric-label">Location / True N</span>
+                <span class="metric-value" id="solar-loc-val">London (0°)</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Floating AI Prompt Bar -->
         <div class="ai-floating-bar">
           <div class="ai-bar-header">
             <div class="ai-chips-row">
+              <button class="ai-chip" id="btn-house-brief" type="button">House brief</button>
+              <button class="ai-chip" id="btn-render-plan" type="button" disabled title="Export saved requirements and interior and exterior render jobs">Render plan</button>
+              <button class="ai-chip" id="btn-open-gallery" type="button" title="View Studio Render Gallery with geometry-grounded interior, exterior and street views">Render gallery</button>
               <button class="ai-chip" data-prompt="make the bedroom larger by 1m">✨ Make bedroom larger</button>
               <button class="ai-chip" data-prompt="replace the sofa with a dining table">🔄 Replace sofa with table</button>
               <button class="ai-chip" data-prompt="change living room floor to dark oak">🪵 Floor to dark oak</button>
@@ -105,7 +213,7 @@
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
             </div>
             <input type="text" aria-label="Describe a house or a design change" id="ai-prompt-input" class="ai-prompt-input" placeholder="Create a 150m² house with 3 bedrooms, or describe a change…" />
-            <button class="btn btn-primary" id="btn-ai-submit">Generate</button>
+            <button class="btn btn-primary" id="btn-ai-submit">Send</button>
           </div>
           <div class="ai-status" id="ai-status" role="alert" aria-live="polite"></div>
         </div>

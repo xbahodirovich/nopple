@@ -13,9 +13,16 @@ import type { MoppleInteriorObject } from '../project/schema.ts';
 import { parseProject } from '../project/validation.ts';
 import { executeAiPrompt, isHouseRequest, getStoredApiKey, getStoredModel, setStoredApiKey, setStoredModel } from './ai.ts';
 import { Canvas2D, type SelectedEntity } from './canvas2d.ts';
+import { createArchitectureControls } from './architecture.ts';
 import { Canvas3D } from './canvas3d.ts';
 import { LayersPanel } from './layers.ts';
 import { PropertyPanel } from './properties.ts';
+import { createGenerationPlan } from '../project/generation.ts';
+import { createBriefDialog } from './brief.ts';
+import { createRenderGalleryDialog } from './render-gallery.ts';
+import { DEFAULT_SUN } from './solar.ts';
+import type { MoppleSun } from '../project/schema.ts';
+import { DEFAULT_GEO } from './site.ts';
 
 const AUTOSAVE_STORAGE_KEY = 'mopple_editor_project';
 
@@ -85,6 +92,8 @@ export function initEditor() {
   for (const format of ['png','pdf'] as const) document.getElementById(`export-${format}`)?.addEventListener('click',()=>{ track('export_clicked',{format}); void exportPlan(engine.getSnapshot(),format).catch(e=>showStatus(errorMessage(e),'error')); });
   document.getElementById('export-3d')?.addEventListener('click',()=>{track('export_clicked',{format:'3d'});if(!canvas3d){showStatus('3D is unavailable in this browser.','error');return;}void canvas3d.screenshot().then(blob=>download(blob,'mopple-3d.png')).catch(e=>showStatus(errorMessage(e),'error'));});
   document.getElementById('share-home')?.addEventListener('click',()=>{void shareHome(engine.getSnapshot()).then(async url=>{track('home_shared');try{await navigator.clipboard.writeText(url);showStatus('Read-only share link copied.','success');}catch{const link=document.createElement('a');link.href=url;link.textContent='Open your share link';link.target='_blank';link.rel='noopener';document.querySelector('.workspace-tools')?.append(link);showStatus('Share link ready. Open it to copy the address.','success');}}).catch(e=>showStatus(errorMessage(e),'error'));});
+  const architectureControls = canvas3d ? createArchitectureControls(pane3D, engine, canvas3d, entity => handleSelect(entity)) : undefined;
+  if (architectureControls) cleanups.push(() => architectureControls.destroy());
 
   // 2. Instantiate Panels
   const layersPanel = new LayersPanel(layersContainer, {
@@ -308,12 +317,39 @@ export function initEditor() {
   aiEngineBadge?.addEventListener('click', () => openApiKeyModal());
   updateEngineBadge();
 
+  const houseBrief = createBriefDialog(engine, () => {
+    track('home_generated', {source:'local_architecture'});
+    aiInput.value = ''; handleSelect(null); canvas2d.resetView(); canvas3d?.resetCamera();
+    showStatus('Starter floor plan and 3D concept created. Full requirements saved. Detailed architecture and interior images still need the full generator.', 'success');
+  });
+  const renderPlanButton = document.getElementById('btn-render-plan') as HTMLButtonElement;
+  function syncRenderPlan() { renderPlanButton.disabled = !engine.getSnapshot().metadata.designBrief; }
+  syncRenderPlan(); cleanups.push(engine.subscribe(syncRenderPlan));
+  renderPlanButton.addEventListener('click', () => {
+    try {
+      const plan = createGenerationPlan(engine.getSnapshot());
+      const url = URL.createObjectURL(new Blob([JSON.stringify(plan, null, 2)], { type: 'application/json' }));
+      const link = document.createElement('a'); link.href = url; link.download = 'mopple-generation-plan.json'; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) { reportEditorError(error); }
+  });
+  const briefDialog = houseBrief.dialog;
+  cleanups.push(() => houseBrief.destroy());
+  document.getElementById('btn-house-brief')?.addEventListener('click', () => { if (!aiBusy) houseBrief.open(); });
+
+  const renderGallery = createRenderGalleryDialog(engine, () => canvas3d);
+  cleanups.push(() => renderGallery.destroy());
+  document.getElementById('btn-open-gallery')?.addEventListener('click', () => {
+    if (!aiBusy) renderGallery.open();
+  });
+
   // One outstanding request; errors preserve input and never guess a fallback edit.
   let aiBusy = false;
   async function runAiPrompt(promptText: string) {
     if (aiBusy) return;
     const text = promptText.trim();
     if (!text) { showStatus('Enter a house description or a change to make.', 'error'); aiInput.focus(); return; }
+    if (isHouseRequest(text)) { houseBrief.open(text); return; }
     aiBusy = true; aiSubmit.disabled = true;
     document.querySelectorAll<HTMLButtonElement>('.ai-chip').forEach(b => b.disabled = true);
     showStatus(getStoredApiKey() ? `Asking ${getStoredModel()}…` : 'Applying offline design command…', 'loading');
@@ -323,11 +359,11 @@ export function initEditor() {
       track(isHouseRequest(text) ? 'home_generated' : 'home_edited', {source:result.source}); showStatus(result.message, 'success'); aiInput.value = ''; handleSelect(null);
       if (isHouseRequest(text)) { canvas2d.resetView(); canvas3d?.resetCamera(); }
     } catch (error) { showStatus(errorMessage(error), 'error'); }
-    finally { aiBusy = false; aiSubmit.disabled = false; document.querySelectorAll<HTMLButtonElement>('.ai-chip').forEach(b => b.disabled = false); }
+    finally { aiBusy = false; aiSubmit.disabled = false; document.querySelectorAll<HTMLButtonElement>('.ai-chip').forEach(b => b.disabled = false); syncRenderPlan(); }
   }
   aiSubmit.addEventListener('click', () => void runAiPrompt(aiInput.value));
   aiInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); void runAiPrompt(aiInput.value); } });
-  document.querySelectorAll<HTMLButtonElement>('.ai-chip').forEach(chip => chip.addEventListener('click', () => {
+  document.querySelectorAll<HTMLButtonElement>('.ai-chip[data-prompt]').forEach(chip => chip.addEventListener('click', () => {
     aiInput.value = chip.dataset.prompt || ''; void runAiPrompt(aiInput.value);
   }));
 
@@ -384,14 +420,211 @@ export function initEditor() {
     canvas2d.resetView();
     canvas3d?.resetCamera();
   });
-  document.getElementById('hud-view-iso')?.addEventListener('click', () => canvas3d?.setViewPreset('isometric'));
-  document.getElementById('hud-view-top')?.addEventListener('click', () => canvas3d?.setViewPreset('top'));
+  document.getElementById('hud-view-iso')?.addEventListener('click', () => { canvas3d?.setViewPreset('isometric'); architectureControls?.setView('isometric'); });
+  document.getElementById('hud-view-top')?.addEventListener('click', () => { canvas3d?.setViewPreset('top'); architectureControls?.setView('top'); });
+  document.getElementById('hud-view-cutaway')?.addEventListener('click', () => { canvas3d?.setViewPreset('cutaway'); architectureControls?.setView('cutaway'); });
+
+  // Solar Study HUD Elements
+  const solarPanel = document.getElementById('solar-study-panel') as HTMLElement | null;
+  const btnSolar = document.getElementById('btn-solar') as HTMLButtonElement | null;
+  const hudSolarToggle = document.getElementById('hud-solar-toggle') as HTMLButtonElement | null;
+  const solarCloseBtn = document.getElementById('solar-close-btn') as HTMLButtonElement | null;
+  const solarTimelapseBtn = document.getElementById('solar-timelapse-btn') as HTMLButtonElement | null;
+  const solarTimeSlider = document.getElementById('solar-time-slider') as HTMLInputElement | null;
+  const solarTimeLabel = document.getElementById('solar-time-label') as HTMLElement | null;
+  const solarClockDisplay = document.getElementById('solar-clock-display') as HTMLElement | null;
+  const solarPeriodBadge = document.getElementById('solar-period-badge') as HTMLElement | null;
+  const solarDateSlider = document.getElementById('solar-date-slider') as HTMLInputElement | null;
+  const solarDateLabel = document.getElementById('solar-date-label') as HTMLElement | null;
+  const solarHeliodonCheck = document.getElementById('solar-heliodon-check') as HTMLInputElement | null;
+  const solarElevationVal = document.getElementById('solar-elevation-val') as HTMLElement | null;
+  const solarAzimuthVal = document.getElementById('solar-azimuth-val') as HTMLElement | null;
+  const solarDaylightVal = document.getElementById('solar-daylight-val') as HTMLElement | null;
+  const solarLocVal = document.getElementById('solar-loc-val') as HTMLElement | null;
+
+  const sunMode = document.getElementById('sun-mode') as HTMLSelectElement;
+  const sunAzimuth = document.getElementById('sun-azimuth') as HTMLInputElement;
+  const sunElevation = document.getElementById('sun-elevation') as HTMLInputElement;
+  const sunWarmth = document.getElementById('sun-warmth') as HTMLInputElement | null;
+  const sunIntensity = document.getElementById('sun-intensity') as HTMLInputElement | null;
+  const sunWarmthVal = document.getElementById('sun-warmth-value') as HTMLElement | null;
+  const sunIntensityVal = document.getElementById('sun-intensity-value') as HTMLElement | null;
+
+  function readSun(): MoppleSun {
+    return {
+      mode: sunMode.value as MoppleSun['mode'],
+      azimuth: Number(sunAzimuth.value),
+      elevation: Number(sunElevation.value),
+      warmth: sunWarmth ? Math.round((Number(sunWarmth.value) / 100) * 100) / 100 : undefined,
+      intensity: sunIntensity ? Number(sunIntensity.value) : undefined,
+    };
+  }
+
+  function syncSun(sun = engine.getSnapshot().metadata.sun ?? DEFAULT_SUN) {
+    sunMode.value = sun.mode;
+    sunAzimuth.value = String(sun.azimuth);
+    sunElevation.value = String(sun.elevation);
+    const warmthPercent = Math.round((sun.warmth ?? DEFAULT_SUN.warmth ?? 0.35) * 100);
+    const intensityVal = sun.intensity ?? DEFAULT_SUN.intensity ?? 2.8;
+    if (sunWarmth) sunWarmth.value = String(warmthPercent);
+    if (sunIntensity) sunIntensity.value = String(intensityVal);
+    document.getElementById('sun-azimuth-value')!.textContent = `${sun.azimuth}°`;
+    document.getElementById('sun-elevation-value')!.textContent = `${sun.elevation}°`;
+    if (sunWarmthVal) sunWarmthVal.textContent = `${warmthPercent}%`;
+    if (sunIntensityVal) sunIntensityVal.textContent = `${intensityVal.toFixed(1)}`;
+    const manual = sun.mode === 'manual';
+    sunAzimuth.disabled = !manual;
+    sunElevation.disabled = !manual;
+    if (sunWarmth) sunWarmth.disabled = !manual;
+    if (sunIntensity) sunIntensity.disabled = !manual;
+    for (const el of [solarTimeSlider, solarDateSlider, solarTimelapseBtn, solarHeliodonCheck]) if (el) el.disabled = manual;
+    document.querySelectorAll<HTMLButtonElement>('.solar-pill-btn').forEach(button => button.disabled = manual);
+    document.querySelectorAll<HTMLElement>('.solar-readout-row, [data-solar-auto]').forEach(element => element.hidden = manual);
+    updateSolarUI();
+  }
+
+  const sunSliders = [sunAzimuth, sunElevation];
+  if (sunWarmth) sunSliders.push(sunWarmth);
+  if (sunIntensity) sunSliders.push(sunIntensity);
+
+  for (const slider of sunSliders) {
+    slider.addEventListener('input', () => { const sun = readSun(); canvas3d?.previewSun(sun); syncSun(sun); });
+    slider.addEventListener('change', () => engine.applyOperations({ operations: [{ type: 'update_sun', sun: readSun() }] }));
+  }
+  sunMode.addEventListener('change', () => {
+    canvas3d?.stopTimelapse();
+    if (solarTimelapseBtn) solarTimelapseBtn.textContent = '▶ Play';
+    engine.applyOperations({ operations: [{ type: 'update_sun', sun: readSun() }] });
+  });
+  cleanups.push(engine.subscribe(() => syncSun()));
+  syncSun();
+
+  function formatClockTime(decimalHours: number): string {
+    const totalMinutes = Math.round(decimalHours * 60);
+    const hrs = Math.floor(totalMinutes / 60) % 24;
+    const mins = totalMinutes % 60;
+    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+  }
+
+  function updateSolarUI() {
+    if (!canvas3d) return;
+    const time = canvas3d.getSolarTime();
+    const metrics = canvas3d.getSolarMetrics();
+    const clockStr = formatClockTime(time);
+
+    if (solarClockDisplay) solarClockDisplay.textContent = sunMode.value === 'manual' ? 'Manual' : clockStr;
+    if (solarTimeLabel) solarTimeLabel.textContent = clockStr;
+    if (solarTimeSlider) solarTimeSlider.value = time.toFixed(1);
+
+    if (solarPeriodBadge) {
+      if (metrics.isGoldenHour) {
+        solarPeriodBadge.textContent = 'Golden Hour';
+        solarPeriodBadge.style.color = '#ffb366';
+        solarPeriodBadge.style.background = 'rgba(255, 179, 102, 0.15)';
+      } else if (metrics.isDaylight) {
+        solarPeriodBadge.textContent = 'Daylight';
+        solarPeriodBadge.style.color = 'var(--mint)';
+        solarPeriodBadge.style.background = 'rgba(168, 232, 210, 0.15)';
+      } else if (metrics.elevationDeg > -6) {
+        solarPeriodBadge.textContent = 'Twilight';
+        solarPeriodBadge.style.color = '#99b3ff';
+        solarPeriodBadge.style.background = 'rgba(153, 179, 255, 0.15)';
+      } else {
+        solarPeriodBadge.textContent = 'Night';
+        solarPeriodBadge.style.color = '#738a9c';
+        solarPeriodBadge.style.background = 'rgba(115, 138, 156, 0.15)';
+      }
+    }
+
+    if (solarElevationVal) solarElevationVal.textContent = `${metrics.elevationDeg.toFixed(1)}°`;
+    if (solarAzimuthVal) solarAzimuthVal.textContent = `${metrics.azimuthDeg.toFixed(1)}°`;
+    if (solarDaylightVal) {
+      const rise = formatClockTime(metrics.sunriseHour);
+      const set = formatClockTime(metrics.sunsetHour);
+      solarDaylightVal.textContent = sunMode.value === 'manual' ? 'Manual light' : `${rise} — ${set}`;
+    }
+
+    const geo = engine.getGeo() ?? DEFAULT_GEO;
+    if (solarLocVal) {
+      solarLocVal.textContent = sunMode.value === 'manual' ? 'Scene compass' : `${geo.city ?? 'Imported site'} (solar time)`;
+    }
+  }
+
+  let isSolarOpen = false;
+  function toggleSolarPanel(open?: boolean) {
+    isSolarOpen = open ?? !isSolarOpen;
+    if (solarPanel) {
+      solarPanel.style.display = isSolarOpen ? 'flex' : 'none';
+      if (isSolarOpen) {
+        if (viewMode === '2d') setViewMode('split');
+        updateSolarUI();
+      }
+    }
+    btnSolar?.classList.toggle('active', isSolarOpen);
+    hudSolarToggle?.classList.toggle('active', isSolarOpen);
+  }
+
+  btnSolar?.addEventListener('click', () => toggleSolarPanel());
+  hudSolarToggle?.addEventListener('click', () => toggleSolarPanel());
+  solarCloseBtn?.addEventListener('click', () => toggleSolarPanel(false));
+
+  solarTimeSlider?.addEventListener('input', () => {
+    if (!canvas3d) return;
+    canvas3d.setSolarTime(parseFloat(solarTimeSlider.value));
+    updateSolarUI();
+  });
+
+  solarDateSlider?.addEventListener('input', () => {
+    if (!canvas3d) return;
+    const day = parseInt(solarDateSlider.value, 10);
+    const date = new Date(new Date().getFullYear(), 0, day);
+    canvas3d.setSolarDate(date);
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    let season = '';
+    if (day >= 79 && day <= 171) season = '(Spring)';
+    else if (day >= 172 && day <= 265) season = '(Summer)';
+    else if (day >= 266 && day <= 354) season = '(Autumn)';
+    else season = '(Winter)';
+    if (solarDateLabel) solarDateLabel.textContent = `${monthNames[date.getMonth()]} ${date.getDate()} ${season}`;
+    updateSolarUI();
+  });
+
+  solarHeliodonCheck?.addEventListener('change', () => {
+    canvas3d?.setHeliodonVisible(Boolean(solarHeliodonCheck?.checked));
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('.solar-pill-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!canvas3d) return;
+      const t = parseFloat(btn.dataset.time || '12');
+      canvas3d.setSolarTime(t);
+      updateSolarUI();
+    });
+  });
+
+  let isTimelapsePlaying = false;
+  solarTimelapseBtn?.addEventListener('click', () => {
+    if (!canvas3d) return;
+    isTimelapsePlaying = canvas3d.toggleTimelapse(() => {
+      updateSolarUI();
+    });
+    if (solarTimelapseBtn) {
+      solarTimelapseBtn.textContent = isTimelapsePlaying ? '⏸ Pause' : '▶ Play';
+    }
+  });
 
   // Global Keyboard Shortcuts
   window.addEventListener('keydown', e => {
     const target = e.target as HTMLElement;
-    if (apiKeyModal.classList.contains('show')) return;
+    if (apiKeyModal.classList.contains('show') || briefDialog.open || renderGallery.dialog.open) return;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+      return;
+    }
+
+    // S: Toggle Solar Study
+    if (e.key.toLowerCase() === 's' && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault();
+      toggleSolarPanel();
       return;
     }
 

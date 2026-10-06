@@ -11,3 +11,5 @@
 - Require optional Redis configuration for deployment-wide caps; otherwise limits are explicitly per process. Failed Redis checks fail closed for hosted requests.
 - No configured waitlist sink means local interest capture with honest status, not a claim that an email was submitted.
 - Keep static generic share metadata; canonical absolute OG URLs are configured through VITE_SITE_URL at build time.
+
+- Merge develop_v1: preserve cloud saving, sharing, exports, hosted edit credentials/retry/quotas and multilingual prompt recognition while adopting reviewed briefs, multi-floor architectural generation, render gallery and solar/geolocation controls. New editor house prompts enter the reviewed brief workflow; ordinary edit prompts keep hosted AI with offline fallback.

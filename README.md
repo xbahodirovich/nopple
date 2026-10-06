@@ -11,16 +11,16 @@ npm run dev
 
 Open `/editor.html` (or `/editor` on the production server) for the shared 2D/3D editor. It supports furniture movement/rotation/scaling, room dimensions, wall endpoints, undo/redo, browser autosave and `.mopple` import/export. Mobile Layers and Properties buttons expose the same controls.
 
-Without a key, explicit offline commands support a basic single-floor house layout and common edits:
+New-house requests open a conversational requirements discovery dialog with an AI discovery assistant, interactive requirements form, reference attachment, draft persistence (`mopple_brief_draft`), and durable approval token verification. The architectural engine generates real multi-floor layouts (1–5 floors) with shared walls, doors, windows, ceiling slabs between floors, procedural stairs, and bathroom fixtures. Common edits still run offline:
 
 - `Create a modern 150m² house with 3 bedrooms and 2 bathrooms`
 - `Move the sofa 1m left`
 - `Add a chair to the bedroom`
 - `Change living room floor to dark oak`
 
-Generated houses are editable concept layouts with a central hall, not construction plans. A creation request replaces the design as one undoable operation. Use names or selection to distinguish repeated bedrooms/furniture. Arbitrary prose requires the connected AI model.
+Generated houses feature shared coincident wall vertices, accurate room distributions, inter-floor vertical connections, and PBR 3D materials. A creation request replaces the design as one undoable operation. Use names or selection to distinguish repeated bedrooms/furniture. Arbitrary existing-design edits require the connected AI model.
 
-For NVIDIA NIM, open AI Settings and supply a personal `nvapi-` key. Keys are kept in tab memory, not persisted; re-enter after reload. The client calls the same-origin `/api/ai/operations` endpoint. The server sends the full design to NVIDIA, bounds requests, validates returned operations and geometry, and reports errors without silently applying a different offline action. Concurrent/stale replies cannot overwrite edits.
+For NVIDIA NIM, open AI Settings and supply a personal `nvapi-` key. Keys are kept in tab memory, not persisted; re-enter after reload. The client calls the same-origin `/api/ai/operations` endpoint for interactive edits and `/api/ai/generate` for durable generation jobs. The server sends the design to NVIDIA, bounds requests, validates returned operations and geometry, and reports errors without silently applying a different offline action. Concurrent/stale replies cannot overwrite edits.
 
 `npm run dev` and `npm run preview` include the API middleware. For production:
 
@@ -58,3 +58,12 @@ Three.js references: [renderer lifecycle](https://threejs.org/docs/pages/WebGLRe
 ## Alpha upgrade
 
 See [docs/UPGRADE_SUMMARY.md](docs/UPGRADE_SUMMARY.md) for the current cloud setup, environment variables, project library, sharing, exports and acceptance checks. Hosted AI credentials belong on the server; visitors can use the offline designer without a key or account.
+## Architecture, Render Gallery, and Solar Study
+
+Use **House brief** to collect requirements conversationally, review structured questions, attach references, and generate a durable approval token. **Render gallery** opens the Studio Interior Render Gallery with room viewpoints captured at physical eye level (1.6m), locked to project sun coordinates, with geometry-grounded visual prompts and high-resolution export. **Render plan** exports the complete generation plan and brief.
+
+Sun controls provide manual azimuth (0–360°), elevation (1–90°), warmth (0–100%), and intensity (0.5–5.0), with live Three.js directional lighting, golden hour simulation, persistent `metadata.sun`, autosave, and undo/redo. The Cutaway HUD button toggles upper roof/ceiling visibility for plan inspection. Map and underlay components are permanently removed. Legacy geolocation metadata remains accepted for file compatibility.
+
+### 3D architecture and exterior review
+
+Open Studio → **3D Scene**. Use the viewport’s **3D view**, **Level**, and **Dimensions** controls; expand **Measurement schedule** to inspect model distances or export CSV. **Render gallery → Exterior & street** captures the street perspective and four facades from the same house used for interiors. Model dimensions distinguish centerlines from outer faces; front is the +Z side.

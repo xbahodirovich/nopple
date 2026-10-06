@@ -1,5 +1,7 @@
 import type { MoppleInteriorObject } from './schema.ts';
 export const DEFAULT_FURNITURE_SIZES: Record<MoppleInteriorObject['kind'], { width: number; height: number; depth: number }> = {
+  stairs: {width:1.2,height:2.8,depth:3.2},
+  fixture: {width:1.2,height:.85,depth:.6},
   sofa: { width: 2.2, height: 0.8, depth: 0.95 },
   bed: { width: 1.8, height: 0.9, depth: 2.1 },
   table: { width: 1.6, height: 0.75, depth: 0.9 },

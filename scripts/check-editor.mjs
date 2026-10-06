@@ -47,20 +47,78 @@ try {
   assert.equal(await page.locator('.layer-item[data-type="object"]').count(), 6);
   await prompt('add a chair to the bedroom');
   assert.equal(await page.locator('.layer-item[data-type="object"]').count(), 7);
-  await prompt('create a modern 150m² house with 3 bedrooms and 2 bathrooms');
+  await page.locator('#ai-prompt-input').fill('create a modern 150m² house with 3 bedrooms and 2 bathrooms');
+  await page.locator('#btn-ai-submit').click();
+  await page.locator('.brief-dialog[open]').waitFor();
+  assert.equal(await page.locator('.layer-item[data-type="room"]').count(), 4, 'brief does not create geometry');
+  for (const key of ['style', 'site', 'household', 'spaces', 'materials', 'budget', 'lighting', 'interiorViews']) {
+    await page.locator(`#brief-${key}`).fill(key === 'spaces' ? 'Office, courtyard, and a reading room' : 'No preference');
+  }
+  await page.locator('#brief-next').click();
+  await page.locator('#brief-review').waitFor();
+  assert.equal(await page.locator('#brief-review-title').evaluate(el => document.activeElement === el), true, 'review begins at its heading for keyboard users');
+  await page.locator('#brief-next').click();
+  assert.match(await page.locator('#brief-error').textContent(), /check the confirmation/);
+  await mkdir('.impeccable/review', { recursive: true });
+  await page.screenshot({ path: '.impeccable/review/brief-review-desktop.png' });
+  await page.locator('#brief-confirm').check();
+  await page.locator('#brief-next').click();
+  await page.locator('.brief-dialog').waitFor({ state: 'hidden' });
   assert.equal(await page.locator('.layer-item[data-type="room"]').count(), 9);
   // pagehide must flush the latest design before the debounce expires.
   await page.evaluate(() => dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('mopple_editor_project')));
   assert.equal(saved.building.rooms.filter(r => r.type === 'bedroom').length, 3);
+  assert.equal(saved.metadata.designBrief.spaces, 'Office, courtyard, and a reading room');
+  const downloadPromise = page.waitForEvent('download');
+  await page.locator('#btn-render-plan').click();
+  const download = await downloadPromise;
+  const plan = JSON.parse(await readFile(await download.path(), 'utf8'));
+  assert.equal(plan.interiorJobs[0].status, 'not_implemented');
+  assert.equal(plan.brief.spaces, saved.metadata.designBrief.spaces);
   await page.reload({ waitUntil: 'networkidle' });
   assert.equal(await page.locator('.layer-item[data-type="room"]').count(), 9);
+
+  assert.equal(await page.locator('#btn-geo, #modal-geo, #geo-map-canvas').count(), 0);
+  await page.locator('#btn-solar').click();
+  await page.locator('#solar-study-panel').evaluate(el => el.style.visibility = 'hidden');
+  const beforeSun = await page.locator('#pane-3d canvas').screenshot();
+  await page.locator('#solar-study-panel').evaluate(el => el.style.visibility = '');
+  await page.locator('#sun-azimuth').fill('90');
+  await page.locator('#sun-azimuth').dispatchEvent('change');
+  assert.equal(await page.locator('#sun-azimuth-value').textContent(), '90°');
+  await page.locator('#solar-study-panel').evaluate(el => el.style.visibility = 'hidden');
+  assert.notDeepEqual(await page.locator('#pane-3d canvas').screenshot(), beforeSun, 'sun direction changes the rendered scene without HUD labels');
+  await page.locator('#solar-study-panel').evaluate(el => el.style.visibility = '');
+  await page.locator('#sun-elevation').fill('20');
+  await page.locator('#sun-elevation').dispatchEvent('change');
+  await page.locator('#sun-warmth').fill('65');
+  await page.locator('#sun-warmth').dispatchEvent('change');
+  assert.equal(await page.locator('#sun-warmth-value').textContent(), '65%');
+  await page.locator('#sun-intensity').fill('3.5');
+  await page.locator('#sun-intensity').dispatchEvent('change');
+  assert.equal(await page.locator('#sun-intensity-value').textContent(), '3.5');
+  await page.locator('#btn-undo').click();
+  assert.equal(await page.locator('#sun-intensity').inputValue(), '2.8');
+  await page.evaluate(() => dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.locator('#btn-solar').click();
+  assert.equal(await page.locator('#sun-azimuth').inputValue(), '90');
+  await page.locator('#solar-close-btn').click();
+
+  // Viewport cutaway and render gallery dialog
+  await page.locator('#hud-view-cutaway').click();
+  await page.locator('#btn-open-gallery').click();
+  await page.locator('.gallery-dialog[open]').waitFor();
+  assert.ok(await page.locator('.gallery-card').count() >= 1);
+  await page.locator('#gallery-btn-close').click();
+  await page.locator('.gallery-dialog').waitFor({ state: 'hidden' });
 
   // Imported HTML remains text even in attributes and selected room headers.
   const imported = JSON.parse(await readFile('examples/modern-house.mopple', 'utf8'));
   imported.building.rooms[0].name = '<img src=x onerror="window.injected=true">';
   imported.project.name = '\"><img src=x onerror="window.injected=true">';
-  await page.locator('input[type=file]').setInputFiles({ name: 'test.mopple', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(imported)) });
+  await page.locator('input[type=file][accept*=".mopple"]').setInputFiles({ name: 'test.mopple', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(imported)) });
   await page.locator('.layer-item[data-id="room_kitchen"]').click();
   assert.equal(await page.locator('#prop-room-name').inputValue(), imported.building.rooms[0].name);
   assert.equal(await page.evaluate(() => window.injected), undefined);
@@ -81,7 +139,7 @@ try {
   await page.unroute('**/api/ai/operations');
   await page.locator('#btn-apikey').click(); await page.locator('#apikey-input').fill(''); await page.locator('#btn-save-apikey').click();
 
-  await page.locator('input[type=file]').setInputFiles({ name: 'modern-house.mopple', mimeType: 'application/json', buffer: Buffer.from(await readFile('examples/modern-house.mopple', 'utf8')) });
+  await page.locator('input[type=file][accept*=".mopple"]').setInputFiles({ name: 'modern-house.mopple', mimeType: 'application/json', buffer: Buffer.from(await readFile('examples/modern-house.mopple', 'utf8')) });
   await page.locator('#hud-reset').click();
   await page.waitForTimeout(100);
   const draws = await page.evaluate(() => window.editorDraws);
@@ -89,6 +147,12 @@ try {
   assert.equal(await page.evaluate(() => window.editorDraws), draws, '3D stops drawing when idle');
   await mkdir('.impeccable/review', { recursive: true });
   await page.screenshot({ path: '.impeccable/review/editor-desktop.png' });
+  await page.locator('#btn-house-brief').click();
+  await page.screenshot({ path: '.impeccable/review/brief-desktop.png' });
+  await page.locator('#brief-cancel').click();
+  await page.locator('#btn-solar').click();
+  await page.screenshot({ path: '.impeccable/review/sun-desktop.png' });
+  await page.locator('#solar-close-btn').click();
 
   // Mobile keeps a usable canvas; both panels remain reachable.
   await page.setViewportSize({ width: 390, height: 844 });
@@ -101,6 +165,13 @@ try {
   await page.locator('[data-panel="properties-container"]').click();
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await page.screenshot({ path: '.impeccable/review/editor-mobile.png' });
+  await page.locator('#btn-house-brief').click();
+  await page.screenshot({ path: '.impeccable/review/brief-mobile.png' });
+  assert.ok(await page.locator('.brief-dialog').evaluate(el => el.scrollWidth <= el.clientWidth));
+  await page.keyboard.press('Escape');
+  await page.locator('#btn-solar').click();
+  await page.screenshot({ path: '.impeccable/review/sun-mobile.png' });
+  assert.ok(await page.locator('#solar-study-panel').evaluate(el => el.scrollWidth <= el.clientWidth));
   assert.deepEqual(errors, []);
   console.log('Editor regression checks passed: scale, undo, house generation, autosave, safe imports, API errors, idle rendering, mobile panels.');
 } finally { await browser?.close(); await server.close(); }

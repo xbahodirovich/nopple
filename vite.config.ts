@@ -1,6 +1,7 @@
 import { resolve } from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import { handleAiRequest } from './server/ai.ts';
+import { handleGenerationRequest } from './server/generation.ts';
 
 export default defineConfig(({mode}) => {
  const env=loadEnv(mode,process.cwd(),'');
@@ -13,8 +14,14 @@ export default defineConfig(({mode}) => {
       const origin=new URL(env.VITE_SITE_URL).origin;
       return html.replace(/(<meta property="og:image" content=")([^" ]+)(")/, (_match,start,path,end)=>start+new URL(path,origin).href+end).replace('</head>',`<meta property="og:url" content="${new URL(context.path,origin).href}"></head>`);
     } },
-    configureServer(server) { server.middlewares.use('/api/ai/operations', (req, res) => { void handleAiRequest(req, res); }); },
-    configurePreviewServer(server) { server.middlewares.use('/api/ai/operations', (req, res) => { void handleAiRequest(req, res); }); },
+    configureServer(server) {
+      server.middlewares.use('/api/ai/operations', (req, res) => { void handleAiRequest(req, res); });
+      server.middlewares.use('/api/ai/generate', (req, res) => { void handleGenerationRequest(req, res); });
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use('/api/ai/operations', (req, res) => { void handleAiRequest(req, res); });
+      server.middlewares.use('/api/ai/generate', (req, res) => { void handleGenerationRequest(req, res); });
+    },
   }],
   build: {
     rollupOptions: {

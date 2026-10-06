@@ -2,12 +2,14 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import { handleAiRequest } from './ai.ts';
+import { handleGenerationRequest } from './generation.ts';
 
 const root = resolve('dist');
 const types: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.woff2': 'font/woff2', '.svg': 'image/svg+xml', '.json': 'application/json' };
 createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost');
   if (url.pathname === '/api/ai/operations') { await handleAiRequest(req, res); return; }
+  if (url.pathname.startsWith('/api/ai/generate')) { await handleGenerationRequest(req, res); return; }
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); res.end(); return; }
   try {
     const pathname = decodeURIComponent(url.pathname);

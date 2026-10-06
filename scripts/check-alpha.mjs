@@ -10,7 +10,11 @@ try{
  await page.locator('#project-title').fill('Alpha acceptance home');await page.locator('#project-title').press('Tab');
  await page.waitForFunction(()=>JSON.parse(localStorage.getItem('mopple_homes_v1')??'[]').some(h=>h.name==='Alpha acceptance home'));
  await page.locator('.ai-prompt-input').fill('120 m2 uy yarat 2 yotoqxona 1 hammom');await page.locator('.ai-prompt-input').press('Enter');
- await page.waitForFunction(()=>JSON.parse(localStorage.getItem('mopple_editor_project')??'null')?.building.rooms.some(r=>r.id==='house_hall'));
+ await page.locator('.brief-dialog[open]').waitFor();
+ for(const key of ['style','site','household','spaces','materials','budget','lighting','interiorViews'])await page.locator(`#brief-${key}`).fill('No preference');
+ await page.locator('#brief-next').click();await page.locator('#brief-confirm').check();await page.locator('#brief-next').click();await page.locator('.brief-dialog').waitFor({state:'hidden'});
+ await page.waitForFunction(()=>JSON.parse(localStorage.getItem('mopple_editor_project')??'null')?.metadata.designBrief);
+
  assert.ok(await page.evaluate(()=>JSON.parse(localStorage.getItem('mopple_homes_v1'))[0].versions.length>0));
  const home=await page.evaluate(()=>JSON.parse(localStorage.getItem('mopple_editor_project')));assert.equal(home.building.rooms.filter(r=>r.type==='bedroom').length,2);
  for(const format of ['png','pdf','3d']){const promise=page.waitForEvent('download');await page.locator('#export-'+format).click();const download=await promise;const bytes=await readFile(await download.path());assert.ok(bytes.length>500);if(format==='pdf')assert.equal(bytes.subarray(0,8).toString(),'%PDF-1.4');}

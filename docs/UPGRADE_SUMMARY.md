@@ -86,3 +86,7 @@ Build and strict TypeScript lint pass. All 57 unit tests pass. Unit tests cover 
 1. Provision the cloud services, execute the migration and run a deployed acceptance pass with real Google/NVIDIA/Redis credentials.
 2. Improve compact-apartment layouts and furnishing placement, including collision/egress checks and richer Uzbek/Russian language coverage.
 3. Add account-scoped sync/conflict handling, revocable share controls with generated thumbnails, and vector CAD export adapters.
+
+## develop_v1 merge update
+
+The merged editor now uses reviewed briefs for house creation and supports multi-floor architectural generation, measurement overlays/CSV, exterior/interior scene captures, a render gallery, geolocation and sun-path controls. New house prompts preserve English/Russian/Uzbek recognition and open the brief workflow; hosted edit retry/quotas, cloud/local saving, portable shares and image/PDF exports remain integrated. A Vercel adapter also exposes `/api/ai/generate` for the generation job workflow. Add `npm run test:architecture` to the validation commands. In-memory generation jobs are process-local, not durable across serverless restarts; externally generated photorealistic images remain unconfigured. Earlier single-floor-only limitations describe the pre-merge alpha.
