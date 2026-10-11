@@ -16,3 +16,5 @@ html[lang=ru] .opening h1{font-family:Oswald,sans-serif;font-weight:600;font-siz
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.reveal-wait{opacity:1}.inspiration-frame img,.inspiration-visual,.opening-copy,.perspective-copy h2{transform:none!important;opacity:1!important}.start-button,.nav-cta{transition:none!important}}
 
 .hero-orbit{position:absolute;right:-110px;top:90px;width:460px;opacity:.2;pointer-events:none;z-index:0;transform:rotate(-18deg)}.hero-orbit img{display:block;width:100%;height:auto}@media(max-width:1023px){.hero-orbit{width:300px;right:-150px;top:200px;opacity:.15}}@media(max-width:640px){.hero-orbit{display:none}}@media(prefers-reduced-motion:reduce){.hero-orbit{transform:rotate(-18deg)!important}}
+
+.site-header .brand-wordmark{display:block;width:180px;height:60px;object-fit:contain;object-position:left center}.site-header .brand{flex:0 0 auto;line-height:0}@media(max-width:640px){.site-header .brand-wordmark{width:138px;height:48px}}@media(max-width:370px){.site-header .brand-wordmark{width:122px;height:42px}}

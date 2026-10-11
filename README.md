@@ -52,9 +52,12 @@ npm run test:selection
 npm run test:editor
 npm run test:alpha
 npm run test:architecture
+npm run test:courtyard
+npm run test:languages
+npm run test:warm
 ```
 
-The build includes strict TypeScript checking. Browser scripts start local servers and require Playwright Chromium (`npx playwright install chromium` if missing). `test:browser` and `test:lifecycle` require a dev server at port 5173. The studio acceptance script checks the entire local flow, persistent captures, ZIP exports, mobile layout, and zero AI requests. Review screenshots are ignored under `.impeccable/review/`.
+The build includes strict TypeScript checking. Browser scripts start their own local Vite servers and require Playwright Chromium (`npx playwright install chromium` if missing). The warm-design sweep checks six viewport widths and all three languages. Screenshots and reports are generated under the ignored `.impeccable/review/` directory.
 
 For a local production server:
 
@@ -69,7 +72,7 @@ The Node server defaults to `127.0.0.1:3000`. It does not automatically load `.e
 
 Layouts are schematic concepts. Furniture is procedural; circulation/collision, engineering, building-code compliance, detailed site constraints, and budget feasibility are not certified. Reference attachments record filenames, not uploaded image/PDF contents. Room/exterior captures preserve the current model but do not provide ray-traced or AI photorealism. PDF plans are raster images, not CAD. WebGL is required for 3D; 2D and plan exports remain available without it. Three.js retains the existing large-bundle advisory.
 
-The renderer-independent meter-based version 1.0 `.mopple` model lives in `src/project/`; the same validated engine drives both editor views. The landing uses labelled AI-generated inspiration photography with reduced-motion-aware scroll reveals and image parallax; it mounts no editable house. Original `design.md`, `mopple-logo.png`, and `mopple-icon.png` are preserved.
+The renderer-independent meter-based version 1.0 `.mopple` model lives in `src/project/`; the same validated engine drives both editor views. The landing uses labelled AI-generated inspiration photography with reduced-motion-aware scroll reveals and image parallax; it mounts no editable house. The homepage header displays the supplied `logo.png`; the supplied icon remains available for other Nopple surfaces. The pinned `design.md` remains preserved.
 
 ## Languages
 

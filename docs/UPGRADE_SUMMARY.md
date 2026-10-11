@@ -32,7 +32,7 @@ npm run test:editor
 npm run test:alpha
 ```
 
-Browser tests require Playwright Chromium (`npx playwright install chromium` if absent). They start their own local servers. The existing `test:browser` and `test:lifecycle` scripts require a running dev server on port 5173.
+Browser tests require Playwright Chromium (`npx playwright install chromium` if absent). They start their own local servers. Browser acceptance scripts start their own local Vite server. Responsive checks cover phone through wide desktop sizes in English, Russian, and Uzbek.
 
 To serve a production build locally, run `npm run build`, then export server variables into the shell and run `npm start`. Unlike Vite, the standalone Node server does not load `.env` automatically; use Node's `--env-file=.env` with `node --env-file=.env --experimental-strip-types server/main.ts` when desired.
 
