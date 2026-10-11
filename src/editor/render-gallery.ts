@@ -4,7 +4,7 @@ import type { MoppleProject, MoppleRoom } from '../project/schema.ts';
 import { roomPolygon, polygonArea } from '../project/geometry.ts';
 import { buildingBounds, exteriorCamera, exteriorViews, exteriorViewNames, type ExteriorView } from '../project/measurements.ts';
 import { createGenerationPlan } from '../project/generation.ts';
-import { getStoredApiKey } from './ai.ts';
+import { loadViews, saveViews } from './render-store.ts';
 import { escapeHtml } from './ui.ts';
 
 export interface RenderCardState {
@@ -42,7 +42,7 @@ export function createRenderGalleryDialog(
       </div>
       <div class="gallery-header-actions">
         <button type="button" class="btn btn-secondary btn-sm" id="gallery-btn-export-plan">Export view details</button>
-        <button type="button" class="btn btn-primary btn-sm" id="gallery-btn-capture-all">Capture all views</button>
+        <button type="button" class="btn btn-primary btn-sm" id="gallery-btn-capture-all">Capture all views</button><label class="gallery-quality-label" for="gallery-quality">Image size<select id="gallery-quality" class="input-select"><option value="1280">Standard · 1280 px</option><option value="1920">Full HD · 1920 px</option><option value="2560">Large · 2560 px</option></select></label>
         <button type="button" class="btn btn-secondary" id="gallery-btn-close" aria-label="Close render gallery">Close</button>
       </div>
     </div>
@@ -106,8 +106,8 @@ export function createRenderGalleryDialog(
     const sun = project.metadata.sun ?? { azimuth: 225, elevation: 40 };
     const brief = project.metadata.designBrief;
 
-    const eyeX = minX + (maxX - minX) * 0.25;
-    const eyeZ = minZ + (maxZ - minZ) * 0.3;
+    const eyeX = maxX - Math.min(.4, (maxX-minX)*.12);
+    const eyeZ = maxZ - Math.min(.4, (maxZ-minZ)*.12);
     const eyeHeight = floorElev + 1.6;
 
     const prompt = `Photorealistic architectural visualization of ${room.name} (${room.type.replaceAll('_', ' ')}). ` +
@@ -125,7 +125,7 @@ export function createRenderGalleryDialog(
       area,
       dimensions: { width, depth, height: room.height },
       camera: { x: eyeX, y: eyeHeight, z: eyeZ, fov: 65 },
-      target: { x: (minX + maxX) / 2, y: floorElev + 1.3, z: (minZ + maxZ) / 2 },
+      target: { x: (minX + maxX) / 2, y: floorElev + .95, z: minZ + (maxZ-minZ)*.28 },
       sunAzimuth: sun.azimuth,
       sunElevation: sun.elevation,
       prompt,
@@ -221,10 +221,17 @@ export function createRenderGalleryDialog(
     }
   }
 
-  function captureRoom(roomId: string) {
+  async function persist() {
+    const images = Object.fromEntries([...cardStates.values()].filter(state => state.imageUrl).map(state => [state.roomId, state.imageUrl!]));
+    get('gallery-status-badge').textContent = 'Saving captured views on this device…';
+    try { await saveViews(engine.getSnapshot().project.id, revision, images); get('gallery-status-badge').textContent = 'Views saved on this device.'; }
+    catch { get('gallery-status-badge').textContent = 'Views captured. Storage is unavailable; download images to keep them.'; }
+  }
+
+  async function captureRoom(roomId: string) {
     const canvas3d = getCanvas3d();
     if (!canvas3d) {
-      alert('3D viewport is unavailable in this environment.');
+      get('gallery-status-badge').textContent = '3D is unavailable. Plan and project exports still work.';
       return;
     }
     const state = cardStates.get(roomId);
@@ -234,10 +241,12 @@ export function createRenderGalleryDialog(
     renderGrid();
 
     try {
-      const dataUrl = state.exteriorView ? canvas3d.captureExteriorView(state.exteriorView, 1280, 720) : canvas3d.captureRoomView(roomId, 1280, 720);
+      const width = Number(get<HTMLSelectElement>('gallery-quality').value);
+      const dataUrl = state.exteriorView ? canvas3d.captureExteriorView(state.exteriorView, width, Math.round(width * 9 / 16)) : canvas3d.captureRoomView(roomId, width, Math.round(width * 9 / 16));
       state.error = undefined;
       state.imageUrl = dataUrl;
       state.status = 'complete';
+      await persist();
     } catch (err) {
       state.status = 'preserved';
       state.error = err instanceof Error ? err.message : String(err);
@@ -245,10 +254,10 @@ export function createRenderGalleryDialog(
     renderGrid();
   }
 
-  function captureAll() {
+  async function captureAll() {
     renderGrid();
     for (const state of cardStates.values()) {
-      if (category === 'exterior' ? state.exteriorView : !state.exteriorView) captureRoom(state.roomId);
+      if (category === 'exterior' ? state.exteriorView : !state.exteriorView) { await new Promise(resolve => requestAnimationFrame(resolve)); await captureRoom(state.roomId); }
     }
   }
   for (const tab of ['interior', 'exterior'] as const) {
@@ -280,10 +289,16 @@ export function createRenderGalleryDialog(
 
   return {
     dialog,
-    open(targetRoomId?: string) {
+    async open(targetRoomId?: string) {
       trigger = document.activeElement as HTMLElement | null;
       if (targetRoomId) { category = 'interior'; get('gallery-tab-interior').setAttribute('aria-pressed', 'true'); get('gallery-tab-exterior').setAttribute('aria-pressed', 'false'); }
       renderGrid();
+      const currentRevision = revision;
+      try {
+        const stored = await loadViews(engine.getSnapshot().project.id, currentRevision);
+        if (revision === currentRevision) for (const [id, image] of Object.entries(stored)) { const state = cardStates.get(id); if (state && !state.imageUrl) { state.imageUrl = image; state.status = 'complete'; } }
+        renderGrid();
+      } catch { /* In-memory captures and downloads remain available. */ }
       dialog.showModal();
       if (targetRoomId) {
         captureRoom(targetRoomId);

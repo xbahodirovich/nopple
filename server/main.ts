@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
+import {pageRoutes,pageRedirects} from './routes.ts';
 import { handleAiRequest } from './ai.ts';
 import { handleGenerationRequest } from './generation.ts';
 
@@ -13,7 +14,8 @@ createServer(async (req, res) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); res.end(); return; }
   try {
     const pathname = decodeURIComponent(url.pathname);
-    const relative = pathname === '/' ? 'index.html' : pathname === '/editor' ? 'editor.html' : pathname.slice(1);
+    if(pageRedirects[pathname]){res.writeHead(308,{Location:pageRedirects[pathname]+url.search});res.end();return;}
+    const relative = pageRoutes[pathname] ?? pathname.slice(1);
     const path = resolve(root, relative);
     if (!path.startsWith(root + sep)) { res.writeHead(403); res.end(); return; }
     const contents = await readFile(path);

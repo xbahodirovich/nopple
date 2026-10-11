@@ -44,40 +44,24 @@ export type BriefTopicKey = typeof BRIEF_TOPICS[number]['key'];
  * Generate a durable approval token for a confirmed design brief.
  * Incorporates a stable signature of all approved requirement fields.
  */
-export function createApprovalToken(brief: DesignBrief): string {
-  const payload = [
-    brief.area,
-    brief.bedrooms,
-    brief.bathrooms,
-    brief.floors,
-    brief.style.trim().toLowerCase(),
-    brief.site.trim().toLowerCase(),
-    brief.household.trim().toLowerCase(),
-    brief.spaces.trim().toLowerCase(),
-    brief.materials.trim().toLowerCase(),
-    brief.budget.trim().toLowerCase(),
-    brief.lighting.trim().toLowerCase(),
-    brief.interiorViews.trim().toLowerCase(),
-  ].join('|');
-
-  let hash = 0;
-  for (let i = 0; i < payload.length; i++) {
-    hash = ((hash << 5) - hash + payload.charCodeAt(i)) | 0;
-  }
-  const hex = Math.abs(hash).toString(16).padStart(8, '0');
-  const timestamp = Date.now().toString(36);
-  return `appr_${hex}_${timestamp}`;
+function approvalPayload(brief: DesignBrief): string {
+  const { approvalToken: _token, approvedAt: _at, ...requirements } = designBriefSchema.parse(brief);
+  return JSON.stringify(Object.fromEntries(Object.entries(requirements).sort(([a], [b]) => a.localeCompare(b))));
 }
 
-/**
- * Verify whether an approval token belongs to the given design brief.
- */
+/** A versioned consistency fingerprint, not authentication or a server signature. */
+export function createApprovalToken(brief: DesignBrief): string {
+  const payload = approvalPayload(brief);
+  let a = 2166136261, b = 5381;
+  for (let i = 0; i < payload.length; i++) {
+    a = Math.imul(a ^ payload.charCodeAt(i), 16777619);
+    b = Math.imul(b, 33) ^ payload.charCodeAt(i);
+  }
+  return `appr_v2_${(a >>> 0).toString(16).padStart(8, '0')}${(b >>> 0).toString(16).padStart(8, '0')}`;
+}
+
 export function verifyApprovalToken(brief: DesignBrief, token?: string): boolean {
-  if (!token || !token.startsWith('appr_')) return false;
-  const parts = token.split('_');
-  if (parts.length < 3) return false;
-  const expectedPrefix = createApprovalToken(brief).slice(0, 13); // appr_<hex>
-  return token.startsWith(expectedPrefix);
+  return Boolean(token && token === createApprovalToken(brief));
 }
 
 export function briefPrompt(brief: DesignBrief): string {
@@ -88,10 +72,11 @@ export function briefPrompt(brief: DesignBrief): string {
 /** Explicit scope report for the brief. */
 export function conceptScope(brief: DesignBrief): string[] {
   return [
-    ...(brief.floors > 1 ? [`${brief.floors} floors requested; this concept only creates one floor.`] : []),
-    'Only area, bedroom count and bathroom count drive the starter layout.',
-    'Style, site, household, extra spaces, materials, budget and lighting are saved for the full generator.',
-    'Architecture and 3D share an editable concept. Detailed architecture and photorealistic interior images are not generated yet.',
+    `${brief.floors} ${brief.floors === 1 ? 'floor' : 'floors'}, ${brief.bedrooms} bedrooms and ${brief.bathrooms} bathrooms across ${brief.area} m².`,
+    'Editable floor plans, shared walls, openings, furniture and connected stair positions.',
+    'Office, courtyard and ground-floor bedroom requests are included when specified and space permits.',
+    'Materials and sunlight can be compared before applying. Room and exterior images are local 3D captures.',
+    'Site, budget and custom constraints remain design notes; structural and building-code checks are outside this concept.',
   ];
 }
 
@@ -174,7 +159,7 @@ export function extractBriefFromPrompt(prompt: string, existing: Partial<DesignB
       const m = lower.match(/(corner lot|narrow plot|sloped plot|steep site)/i);
       if (m) siteMatches.push(m[1]);
     }
-    const cityMatch = lower.match(/(?:in|located in|site in)\s+([A-Z][a-zA-Z\s]+?)(?:,|\.|\s+with|\s+for|$)/);
+    const cityMatch = text.match(/(?:in|located in|site in)\s+([A-Z][a-zA-Z\s]+?)(?:,|\.|\s+with|\s+for|$)/);
     if (cityMatch) siteMatches.push(`Location: ${cityMatch[1].trim()}`);
     if (siteMatches.length > 0) extracted.site = siteMatches.join(', ');
   }

@@ -2,6 +2,11 @@ import { ArchitectureOverlay } from './architecture.ts';
 import { architectureMeasurements, exteriorCamera, exteriorViews, type ExteriorView } from '../project/measurements.ts';
 import { buildDesignScene, disposeTree } from './scene-design.ts';
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import type { MoppleProjectEngine } from '../project/engine.ts';
 import { distance, roomPolygon } from '../project/geometry.ts';
 import type { MoppleInteriorObject, MoppleLight, MoppleMaterial, MoppleProject, MoppleWall } from '../project/schema.ts';
@@ -29,6 +34,9 @@ export class Canvas3D {
   private onSelect?: (entity: SelectedEntity | null) => void;
 
   private renderer: THREE.WebGLRenderer;
+  private composer: EffectComposer;
+  private occlusion: SSAOPass;
+  private environment: THREE.Texture;
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
   private raycaster = new THREE.Raycaster();
@@ -86,7 +94,7 @@ export class Canvas3D {
   private onError: (error: unknown) => void;
 
   screenshot(): Promise<Blob> {
-    this.renderer.render(this.scene, this.camera);
+    this.composer.render();
     return new Promise((resolve,reject)=>this.renderer.domElement.toBlob(b=>b?resolve(b):reject(new Error('3D screenshot failed'))));
   }
 
@@ -101,18 +109,33 @@ export class Canvas3D {
     // Renderer
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.setClearColor(0x0a0d0c, 1);
+    this.renderer.setClearColor(this.project.project.id==='courtyard_residence'?0x010202:0x0a0d0c, 1);
+    this.renderer.localClippingEnabled=true;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = .95;
     this.renderer.domElement.className = 'mopple-canvas-3d';
     this.container.appendChild(this.renderer.domElement);
 
     // Scene & Camera
     this.scene = new THREE.Scene();
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    const environmentRoom = new RoomEnvironment();
+    this.environment = pmrem.fromScene(environmentRoom).texture;
+    this.scene.environment = this.environment;
+    this.scene.environmentIntensity = .45;
+    environmentRoom.dispose(); pmrem.dispose();
+    this.scene.add(new THREE.HemisphereLight('#e6edf0', '#b69c7c', .25));
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+    const presentationTarget=new THREE.WebGLRenderTarget(1,1,{type:THREE.HalfFloatType});
+    presentationTarget.samples=4;
+    this.composer = new EffectComposer(this.renderer,presentationTarget);
+    this.occlusion = new SSAOPass(this.scene, this.camera, 1, 1, 16);
+    this.occlusion.kernelRadius = this.project.project.id==='courtyard_residence'?.65:.16; this.occlusion.minDistance = .001; this.occlusion.maxDistance = .08;
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.composer.addPass(this.occlusion); this.composer.addPass(new OutputPass());
     this.updateCameraPosition();
 
     // Architectural Sky Dome & Heliodon Visualizer
@@ -171,6 +194,8 @@ export class Canvas3D {
     if (this.animationFrameId !== null) cancelAnimationFrame(this.animationFrameId);
     this.unsubscribe();
     this.resizeObserver.disconnect();
+    this.environment.dispose();
+    this.composer.passes.forEach(pass=>pass.dispose()); this.composer.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
     this.dimensions.element.remove();
@@ -190,7 +215,7 @@ export class Canvas3D {
       const sphere = bounds.getBoundingSphere(new THREE.Sphere());
       this.cameraTarget.copy(sphere.center);
       const halfFov = Math.min(this.camera.fov * Math.PI / 360, Math.atan(Math.tan(this.camera.fov * Math.PI / 360) * this.camera.aspect));
-      this.cameraDistance = Math.max(5, sphere.radius * 1.15 / Math.sin(halfFov));
+      this.cameraDistance = Math.max(5, sphere.radius * (this.project.project.id==='courtyard_residence'?1:1.15) / Math.sin(halfFov));
     }
     this.cameraSpherical.set(this.cameraDistance, Math.PI / 3.5, Math.PI / 4); this.updateCameraPosition();
   }
@@ -213,7 +238,7 @@ export class Canvas3D {
     this.updateCameraPosition();
   }
 
-  public setRoofVisible(visible: boolean) { this.roofVisible = visible; this.applyVisibility(); }
+  public setRoofVisible(visible: boolean) { this.roofVisible = visible; this.skyDome.setVisible(visible); this.applyVisibility(); }
   public setFloor(floorId: string | null) { this.activeFloor = floorId; this.applyVisibility(); this.refreshDimensions(); }
   public setDimensionsVisible(visible: boolean) { this.dimensions.enabled = visible; this.refreshDimensions(); }
 
@@ -221,6 +246,7 @@ export class Canvas3D {
     const activeFloor = this.project.building.floors.find(f => f.id === this.activeFloor);
     if (!activeFloor) this.activeFloor = null;
     this.buildingGroup.traverse(node => {
+      if(node instanceof THREE.Mesh && node.userData.cutawayHeight){for(const material of Array.isArray(node.material)?node.material:[node.material])material.clippingPlanes=this.roofVisible?[]:[new THREE.Plane(new THREE.Vector3(0,-1,0),node.userData.cutawayHeight)];}
       if (node.userData.floorId) node.visible = !this.activeFloor || node.userData.floorId === this.activeFloor;
       if (node.userData.isRoof) node.visible = this.roofVisible && !this.activeFloor;
       if (node.userData.isCeiling) node.visible = this.roofVisible && !this.activeFloor;
@@ -252,11 +278,14 @@ export class Canvas3D {
     const centerX = (minX + maxX) / 2, centerZ = (minZ + maxZ) / 2;
 
     const eyeHeight = elev + 1.6;
-    const eyeX = minX + (maxX - minX) * 0.25;
-    const eyeZ = minZ + (maxZ - minZ) * 0.3;
+    const eyeX = maxX - Math.min(.4, (maxX-minX)*.12);
+    const eyeZ = maxZ - Math.min(.4, (maxZ-minZ)*.12);
 
+    if(this.project.project.id==='courtyard_residence' && roomId==='living') {
+      const scale=Math.sqrt(180/150.785);this.camera.position.set(4.35*scale,1.65,9.55*scale);this.cameraTarget.set(1.9*scale,1.05,5*scale);this.camera.lookAt(this.cameraTarget);this.invalidate();return;
+    }
     this.camera.position.set(eyeX, eyeHeight, eyeZ);
-    this.cameraTarget.set(centerX, elev + 1.3, centerZ);
+    this.cameraTarget.set(centerX, elev + .95, minZ + (maxZ-minZ)*.28);
     this.camera.lookAt(this.cameraTarget);
     this.invalidate();
   }
@@ -268,6 +297,25 @@ export class Canvas3D {
 
   public captureExteriorView(view: ExteriorView, width = 1280, height = 720): string {
     return this.captureView(() => this.setViewPreset(view), width, height);
+  }
+
+  /** Render an alternative without committing it, then restore the current scene. */
+  public captureAlternative(project: MoppleProject, roomId?: string, width = 960, height = 600): string {
+    const previous = this.project, sun = this.sunPreview;
+    const originals = [this.buildingGroup, this.furnitureGroup, this.lightingGroup].map(group=>[...group.children]);
+    const oldSun=this.activeSunLight, oldAmbient=this.activeAmbientLight;
+    // Retain the live meshes and shader programs while rendering a temporary variant.
+    // Disposing/recompiling the entire house for every thumbnail stalls editing.
+    [this.buildingGroup,this.furnitureGroup,this.lightingGroup].forEach(group=>group.clear());
+    try {
+      this.project=project;this.syncMaterialsMap();this.rebuildScene();
+      return roomId ? this.captureRoomView(roomId,width,height)
+        : this.captureView(()=>this.setViewPreset('cutaway'),width,height);
+    } finally {
+      [this.buildingGroup,this.furnitureGroup,this.lightingGroup].forEach((group,i)=>{this.clearGroup(group);group.add(...originals[i]);});
+      this.project=previous;this.syncMaterialsMap();this.activeSunLight=oldSun;this.activeAmbientLight=oldAmbient;
+      this.sunPreview=sun;this.applyVisibility();this.updateSolarLighting();this.updateSelectionVisuals();this.invalidate();
+    }
   }
 
   private captureView(position: () => void, width: number, height: number): string {
@@ -282,7 +330,7 @@ export class Canvas3D {
       // Reuse the viewport context: sharing shadow maps across temporary renderers
       // corrupts the next viewport frame and exhausts browser WebGL contexts.
       this.renderer.setPixelRatio(1); this.renderer.setSize(width, height, false);
-      this.renderer.render(this.scene, this.camera);
+      this.composer.setPixelRatio(1); this.composer.setSize(width, height); this.composer.render();
       return this.renderer.domElement.toDataURL('image/png');
     } finally {
       this.renderer.setPixelRatio(pixelRatio); this.renderer.setSize(rendererSize.x, rendererSize.y, false);
@@ -291,7 +339,9 @@ export class Canvas3D {
       this.cameraDistance = previous.distance; this.camera.aspect = previous.aspect; this.camera.fov = previous.fov;
       this.activeFloor = previous.floor; this.setRoofVisible(previous.roof);
       this.selectionHelper.visible = previous.selection; this.heliodon.group.visible = previous.heliodon;
-      this.camera.updateProjectionMatrix(); this.invalidate();
+      this.camera.updateProjectionMatrix();
+      this.composer.setPixelRatio(pixelRatio); this.composer.setSize(rendererSize.x, rendererSize.y);
+      this.invalidate();
     }
   }
 
@@ -310,12 +360,17 @@ export class Canvas3D {
     this.invalidate();
   }
 
+  private lastViewportAspect = 0;
   private resize() {
     const rect = this.container.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
-    this.camera.aspect = rect.width / rect.height;
+    const nextAspect=rect.width/rect.height;
+    const refit=this.project.project.id==='courtyard_residence'&&this.lastViewportAspect>0&&Math.abs(nextAspect-this.lastViewportAspect)>.05;
+    this.camera.aspect = nextAspect;this.lastViewportAspect=nextAspect;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(rect.width, rect.height, false);
+    this.composer.setSize(rect.width, rect.height);
+    if(refit){const phi=this.cameraSpherical.phi,theta=this.cameraSpherical.theta;this.resetCamera();this.cameraSpherical.phi=phi;this.cameraSpherical.theta=theta;this.updateCameraPosition();}
     this.invalidate();
   }
 
@@ -386,10 +441,9 @@ export class Canvas3D {
 
         // Check if wall clicked
         const wallIntersects = this.raycaster.intersectObjects(this.buildingGroup.children, true);
-        const wallHit = wallIntersects.find(i => i.object.userData?.wallId && this.isVisible(i.object));
+        const wallHit = wallIntersects.find(i => (i.object.userData?.wallId || i.object.userData?.roomId) && this.isVisible(i.object));
         if (wallHit) {
-          const wallId = wallHit.object.userData.wallId;
-          this.selected = { type: 'wall', id: wallId };
+          this.selected = wallHit.object.userData.wallId ? {type:'wall',id:wallHit.object.userData.wallId} : {type:'room',id:wallHit.object.userData.roomId};
           this.onSelect?.(this.selected);
           this.updateSelectionVisuals();
           return;
@@ -602,7 +656,7 @@ export class Canvas3D {
 
     if (this.activeAmbientLight) {
       this.activeAmbientLight.color.copy(pos.ambientColor);
-      this.activeAmbientLight.intensity = pos.ambientIntensity;
+      this.activeAmbientLight.intensity = pos.ambientIntensity * .35;
     }
 
     this.skyDome.update(pos);
@@ -650,7 +704,7 @@ export class Canvas3D {
     this.animationFrameId = requestAnimationFrame(() => {
       this.animationFrameId = null;
       if (!this.disposed && this.visible && !document.hidden && this.container.clientWidth && this.container.clientHeight) {
-        this.renderer.render(this.scene, this.camera);
+        this.composer.render();
         this.dimensions.render(this.camera, this.container.clientWidth, this.container.clientHeight);
       }
     });

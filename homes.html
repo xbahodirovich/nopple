@@ -1,10 +1,11 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>My homes | Mopple</title><link rel="icon" type="image/png" href="/mopple-icon.png"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>My homes | Nopple</title><link rel="icon" type="image/png" href="/nopple-icon.png"></head>
 <body class="product-page">
-<header class="product-header"><a class="product-brand" href="/">Mopple</a><nav class="product-nav" aria-label="Main navigation"><a href="/editor.html">Open editor</a></nav></header>
+<header class="product-header"><a class="product-brand" href="/">Nopple</a><nav class="product-nav" aria-label="Main navigation"><a href="/editor">Open Editor</a></nav></header>
 <main class="product-main">
  <div class="product-heading"><div><h1>My homes</h1><p id="storage-description">Your homes are saved on this device. Sign in to save them to your account.</p></div><div class="account-actions"><button id="signin" class="btn btn-secondary">Sign in with Google</button><button id="signout" class="btn btn-secondary" hidden>Sign out</button></div></div>
+ <label class="homes-search" for="homes-search">Find a home<input id="homes-search" class="input-text" type="search" placeholder="Search your homes"></label>
  <p id="status" class="product-status" role="status"></p><div id="homes" aria-busy="true"><p class="product-status">Loading your homes…</p></div>
  <noscript>Enable JavaScript to see homes saved on this device.</noscript>
 </main><script type="module" src="/src/alpha/homes.ts"></script>

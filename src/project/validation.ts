@@ -14,10 +14,10 @@ export class MoppleValidationError extends Error {
 /** Single entry point for future migrations. Never silently upgrades unknown versions. */
 export function migrateProject(input: unknown): unknown {
   if (typeof input !== 'object' || input === null || !('format' in input) || input.format !== FORMAT) {
-    throw new MoppleValidationError([{ path: 'format', message: 'Expected a Mopple project' }]);
+    throw new MoppleValidationError([{ path: 'format', message: 'Expected a Nopple project' }]);
   }
   if (!('version' in input) || input.version !== CURRENT_VERSION) {
-    throw new MoppleValidationError([{ path: 'version', message: 'Unsupported Mopple version' }]);
+    throw new MoppleValidationError([{ path: 'version', message: 'Unsupported Nopple version' }]);
   }
   return input;
 }

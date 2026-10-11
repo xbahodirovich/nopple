@@ -9,7 +9,7 @@ try {
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const errors = []; page.on('pageerror', error => errors.push(error.message));
-  await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/editor.html`, { waitUntil: 'networkidle' });
+  await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/advanced`, { waitUntil: 'networkidle' });
   await page.locator('[data-view="3d"]').click();
   await page.locator('#architecture-view').selectOption('cutaway');
   await page.locator('#architecture-dimensions').check();
@@ -34,6 +34,7 @@ try {
   await page.locator('#gallery-tab-exterior').click();
   assert.equal(await page.locator('.gallery-card').count(), 5);
   await page.locator('#gallery-btn-capture-all').click();
+  await page.waitForFunction(() => document.querySelectorAll('.gallery-card img').length === 5);
   assert.equal(await page.locator('.gallery-card img').count(), 5);
   assert.equal(await page.locator('.gallery-card-error').count(), 0);
   for (const image of await page.locator('.gallery-card img').all()) assert.ok(await image.evaluate(img => img.complete && img.naturalWidth === 1280));
@@ -50,6 +51,7 @@ try {
   console.log('Package export verified');
   await page.locator('#gallery-tab-interior').click();
   await page.locator('.btn-card-capture').first().click();
+  await page.waitForFunction(() => document.querySelectorAll('.gallery-card img').length === 1);
   assert.equal(await page.locator('.gallery-card img').count(), 1);
   await page.locator('#gallery-btn-close').click();
   console.log('Interior capture verified');
@@ -59,12 +61,14 @@ try {
     const c = document.createElement('canvas'); c.width = images[0].width; c.height = images[0].height; const ctx = c.getContext('2d');
     ctx.drawImage(images[0], 0, 0); const first = ctx.getImageData(0, 0, c.width, c.height).data;
     ctx.drawImage(images[1], 0, 0); const second = ctx.getImageData(0, 0, c.width, c.height).data;
-    let count = 0, minX = c.width, minY = c.height, maxX = 0, maxY = 0;
-    for (let i = 0; i < first.length; i += 4) if (first[i] !== second[i] || first[i+1] !== second[i+1] || first[i+2] !== second[i+2]) { const x = i / 4 % c.width, y = Math.floor(i / 4 / c.width); count++; minX = Math.min(minX,x); minY = Math.min(minY,y); maxX = Math.max(maxX,x); maxY = Math.max(maxY,y); }
-    return { count, minX, minY, maxX, maxY };
+    const bounds=document.querySelector('#pane-3d canvas').getBoundingClientRect();
+    const controls=[...document.querySelectorAll('.architecture-toolbar,.selection-editor:not([hidden])')].map(element=>{const rect=element.getBoundingClientRect();return {left:rect.left-bounds.left-3,right:rect.right-bounds.left+3,top:rect.top-bounds.top-3,bottom:rect.bottom-bounds.top+3};});
+    let count = 0, outsideControls=0, minX = c.width, minY = c.height, maxX = 0, maxY = 0;
+    for (let i = 0; i < first.length; i += 4) if (first[i] !== second[i] || first[i+1] !== second[i+1] || first[i+2] !== second[i+2]) { const x = i / 4 % c.width, y = Math.floor(i / 4 / c.width); count++;if(!controls.some(rect=>x>=rect.left&&x<=rect.right&&y>=rect.top&&y<=rect.bottom))outsideControls++; minX = Math.min(minX,x); minY = Math.min(minY,y); maxX = Math.max(maxX,x); maxY = Math.max(maxY,y); }
+    return { count, outsideControls, minX, minY, maxX, maxY };
   }, [before, after].map(b => 'data:image/png;base64,' + b.toString('base64')));
   console.log('Screenshot delta', delta);
-  assert.ok(delta.count === 0 || (delta.maxX < 430 && delta.maxY < 180), 'capture restores viewport pixels outside the focused controls');
+  assert.equal(delta.outsideControls,0,'capture restores viewport pixels outside the focused controls');
   // A geometry edit invalidates cached exterior images.
   await page.locator('#project-title').fill('Updated house'); await page.locator('#project-title').press('Tab');
   await page.locator('#btn-open-gallery').click(); await page.locator('#gallery-tab-exterior').click();

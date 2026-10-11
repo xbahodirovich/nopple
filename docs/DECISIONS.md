@@ -14,3 +14,13 @@
 
 - Merge develop_v1: preserve cloud saving, sharing, exports, hosted edit credentials/retry/quotas and multilingual prompt recognition while adopting reviewed briefs, multi-floor architectural generation, render gallery and solar/geolocation controls. New editor house prompts enter the reviewed brief workflow; ordinary edit prompts keep hosted AI with offline fallback.
 - Design review: preserve the incumbent black/mint palette, Inter, and reversible pinned house demonstration. Apply Taste to marketing and Impeccable to product workflows. Treat the requested unavailable Humanizer and 21st MCP as documented tool gaps and edit copy directly. Prefer immediate studio interactions and explicit, optional sun animation over decorative transitions.
+
+- Local Studio release: defer AI connections. Interpret supported commands locally on a scratch engine, present model-derived before/after captures, and require Apply before committing one undoable change.
+- Approved brief requirements are supplied before geometry generation; explicit floors/spaces/household fields prevent inheriting a previous brief. New-home approval creates a separate project ID.
+- Compare actual material/sun variants from one camera. Never substitute generated photographs for model-derived previews. AI image enhancement remains a future provider integration.
+- Keep captures in bounded IndexedDB storage keyed by project/revision, outside the core model and localStorage history. Save failures retain downloads and in-memory images.
+- Export a dependency-free ZIP of editable geometry, raster plans, dimensions and available local scene captures; the user keeps an independent backup.
+- Brief fingerprints cover all requirement fields and are consistency markers, not authentication. Generation job status/cancellation use separate random access tokens; process-local jobs are bounded and not publicly enumerated.
+- Serialize cloud writes from one browser session and keep local files available when the remote library fails. Cross-device merges remain a separate feature.
+
+- Courtyard reference workspace: keep the supplied visual target as the authority, but expose the live model honestly as a concept. Use a dedicated draft key and `/courtyard.html` to avoid replacing existing saved homes. All displayed views are generated from the same editable project; no reference-image slices are presented as live geometry. Cutaway clipping is a view effect, not a destructive wall edit.

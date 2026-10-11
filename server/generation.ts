@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
 import { designBriefSchema, verifyApprovalToken, type DesignBrief } from '../src/project/brief.ts';
@@ -35,6 +36,7 @@ export interface GenerationArtifact {
 
 export interface GenerationJob {
   id: string;
+  accessToken: string;
   idempotencyKey?: string;
   approvalToken: string;
   projectRevision: number;
@@ -64,7 +66,7 @@ const generateRequestSchema = z.strictObject({
   }).optional(),
 });
 
-// In-memory durable job store
+// Bounded process-local job store; access tokens authorize status and cancellation.
 const jobStore = new Map<string, GenerationJob>();
 const idempotencyIndex = new Map<string, string>();
 
@@ -75,25 +77,30 @@ export async function executeGeneration(
   input: z.infer<typeof generateRequestSchema>
 ): Promise<GenerationJob> {
   const brief = input.approvedBrief;
+  for (const [id, job] of jobStore) if (Date.now() - Date.parse(job.createdAt) > 3600000) jobStore.delete(id);
+  for (const [key, id] of idempotencyIndex) if (!jobStore.has(id)) idempotencyIndex.delete(key);
+  const scopedKey = input.idempotencyKey ? createHash('sha256').update(input.idempotencyKey + JSON.stringify({brief, project: input.targetProject, revision: input.projectRevision})).digest('hex') : undefined;
 
-  // 1. Durable approval verification
+  // 1. Detect changes to the confirmed requirement snapshot.
   if (!verifyApprovalToken(brief, input.approvalToken)) {
     throw new Error('Invalid or unverified approval token. The house brief must be confirmed and signed before generation.');
   }
 
   // 2. Idempotency check
-  if (input.idempotencyKey && idempotencyIndex.has(input.idempotencyKey)) {
-    const existing = jobStore.get(idempotencyIndex.get(input.idempotencyKey)!);
+  if (scopedKey && idempotencyIndex.has(scopedKey)) {
+    const existing = jobStore.get(idempotencyIndex.get(scopedKey)!);
     if (existing && existing.status !== 'failed' && existing.status !== 'cancelled') {
       return existing;
     }
   }
 
+  if (jobStore.size >= 128) { const oldest = jobStore.keys().next().value; if(oldest)jobStore.delete(oldest); }
   const jobId = `job_gen_${globalThis.crypto.randomUUID()}`;
   const now = new Date().toISOString();
 
   const job: GenerationJob = {
     id: jobId,
+    accessToken: globalThis.crypto.randomUUID(),
     idempotencyKey: input.idempotencyKey,
     approvalToken: input.approvalToken,
     projectRevision: input.projectRevision,
@@ -112,8 +119,8 @@ export async function executeGeneration(
   };
 
   jobStore.set(jobId, job);
-  if (input.idempotencyKey) {
-    idempotencyIndex.set(input.idempotencyKey, jobId);
+  if (scopedKey) {
+    idempotencyIndex.set(scopedKey, jobId);
   }
 
   try {
@@ -220,7 +227,7 @@ export async function executeGeneration(
           sunAzimuth,
           sunElevation,
           prompt: conditionedPrompt,
-          provider: input.options?.imageApiKey ? 'configured_provider' : 'geometry_conditioned_capture',
+          provider: 'geometry_conditioned_capture',
         },
       });
     }
@@ -282,7 +289,7 @@ export async function handleGenerationRequest(
   if (req.method === 'GET') {
     const jobId = url.searchParams.get('jobId');
     if (!jobId) {
-      send(200, { activeJobs: Array.from(jobStore.values()).map(j => ({ id: j.id, status: j.status, progress: j.progress })) });
+      send(400, { error: 'A job ID and its access token are required.' });
       return;
     }
     const job = jobStore.get(jobId);
@@ -290,6 +297,7 @@ export async function handleGenerationRequest(
       send(404, { error: 'Generation job not found.' });
       return;
     }
+    if (req.headers.authorization !== `Bearer ${job.accessToken}`) { send(403, {error:'This generation job requires its access token.'}); return; }
     send(200, job);
     return;
   }
@@ -302,6 +310,7 @@ export async function handleGenerationRequest(
       return;
     }
     const job = jobStore.get(jobId)!;
+    if (req.headers.authorization !== `Bearer ${job.accessToken}`) { send(403, {error:'This generation job requires its access token.'}); return; }
     job.status = 'cancelled';
     job.updatedAt = new Date().toISOString();
     send(200, { message: 'Job cancelled.', job });

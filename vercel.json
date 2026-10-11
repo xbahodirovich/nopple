@@ -3,6 +3,18 @@
     {
       "source": "/editor",
       "destination": "/editor.html"
+    },
+    {
+      "source": "/advanced",
+      "destination": "/advanced.html"
+    },
+    {
+      "source": "/homes",
+      "destination": "/homes.html"
+    },
+    {
+      "source": "/share",
+      "destination": "/share.html"
     }
   ],
   "functions": {
@@ -12,5 +24,37 @@
     "api/ai/generate.ts": {
       "maxDuration": 120
     }
-  }
+  },
+  "redirects": [
+    {
+      "source": "/editor.html",
+      "destination": "/editor",
+      "permanent": true
+    },
+    {
+      "source": "/courtyard.html",
+      "destination": "/editor",
+      "permanent": true
+    },
+    {
+      "source": "/courtyard",
+      "destination": "/editor",
+      "permanent": true
+    },
+    {
+      "source": "/advanced.html",
+      "destination": "/advanced",
+      "permanent": true
+    },
+    {
+      "source": "/homes.html",
+      "destination": "/homes",
+      "permanent": true
+    },
+    {
+      "source": "/share.html",
+      "destination": "/share",
+      "permanent": true
+    }
+  ]
 }

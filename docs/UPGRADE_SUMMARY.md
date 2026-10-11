@@ -1,5 +1,7 @@
 # Mopple alpha upgrade
 
+> Current Studio workflow (7 October 2026): reviewed multi-floor briefs, local command previews, finish comparisons, persistent local gallery captures, version recovery and complete ZIP delivery are implemented. Studio makes no AI requests. See [STUDIO_RELEASE.md](STUDIO_RELEASE.md) for the current feature/validation report and [README.md](../README.md) for current usage. The original alpha steps below are historical; later updates supersede their single-floor limits and test counts.
+
 ## Built by step
 
 1. Audited the existing Vite/TypeScript/Three.js/Zod application; preserved the editor, design, offline engine and undo/redo. See AUDIT.md, DECISIONS.md and BLOCKERS.md.
@@ -19,7 +21,7 @@ cp .env.example .env
 npm run dev
 ```
 
-Open `/` for the landing page, `/editor.html` for editing and `/homes.html` for saved homes. All local/offline features work with an empty `.env`. Vite loads server credentials from `.env`; only `VITE_` variables enter the browser bundle.
+Open `/` for the landing page, `/editor` for Courtyard, `/advanced` for detailed editing and `/homes` for saved homes. All local/offline features work with an empty `.env`. Vite loads server credentials from `.env`; only `VITE_` variables enter the browser bundle.
 
 ```sh
 npm run build
@@ -90,3 +92,12 @@ Build and strict TypeScript lint pass. All 57 unit tests pass. Unit tests cover 
 ## develop_v1 merge update
 
 The merged editor now uses reviewed briefs for house creation and supports multi-floor architectural generation, measurement overlays/CSV, exterior/interior scene captures, a render gallery, geolocation and sun-path controls. New house prompts preserve English/Russian/Uzbek recognition and open the brief workflow; hosted edit retry/quotas, cloud/local saving, portable shares and image/PDF exports remain integrated. A Vercel adapter also exposes `/api/ai/generate` for the generation job workflow. Add `npm run test:architecture` to the validation commands. In-memory generation jobs are process-local, not durable across serverless restarts; externally generated photorealistic images remain unconfigured. Earlier single-floor-only limitations describe the pre-merge alpha.
+
+### Courtyard reference studio
+
+Added `/courtyard.html` with the supplied design/compare/share composition, a curated 180 m² courtyard residence, selection-based local edit previews, persistent undoable changes, real finish captures, and exports. Enter through **Courtyard studio** in the editor. This is an editable procedural concept, not yet a photorealistic reproduction of the target image.
+
+
+## Website and clean routes — October 2026
+
+The homepage now opens on an interactive architectural plan with a same-home 3D toggle and selection handoff. Courtyard is the canonical `/editor`; prior detailed tools are retained at `/advanced`. Legacy HTML routes redirect with query parameters preserved. Courtyard adds architectural/furnished plan switching and contextual local edit prompts. See `AI_SETUP.md` for server key configuration and its current integration limits. Photorealistic reference parity remains unachieved.

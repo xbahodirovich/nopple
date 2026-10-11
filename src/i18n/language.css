@@ -1,0 +1,9 @@
+/* Native select: keyboard, touch and platform fallback remain intact. */
+.language-control{display:inline-flex;align-items:center;margin-left:12px;flex-shrink:0;color:#392b24;color-scheme:light}
+.language-control select{font:500 14px 'Inter Variable',sans-serif;color:#392b24;background:#fffaf3;border:1px solid #cabcac;border-radius:10px;padding:10px 12px;min-height:44px;min-width:112px;max-width:160px;cursor:pointer;text-align:start}
+.language-control option{background:#fffaf3;color:#392b24;padding:12px;font:inherit}
+.language-control select:focus-visible{outline:2px solid #92573d;outline-offset:3px}
+@supports (appearance:base-select){.language-control select,.language-control select::picker(select){appearance:base-select}.language-control select::picker(select){background:#fffaf3;color:#392b24;border:1px solid #cabcac;border-radius:12px;padding:6px;margin-top:6px;min-width:170px}.language-control option{border-radius:7px;min-height:44px;gap:14px}.language-control option:checked{background:#efe3d5;font-weight:600}.language-control option:focus-visible{outline:2px solid #92573d;outline-offset:-2px}.language-control option::checkmark{color:#92573d}.language-control select::picker-icon{color:#775f50}}
+.has-brand-icon{display:inline-flex!important;align-items:center!important;gap:8px}.brand-icon{width:40px!important;height:40px!important;object-fit:contain;flex-shrink:0;display:block}.has-brand-icon .brand-dot{display:none}
+@media(hover:hover) and (pointer:fine){.language-control select:hover{border-color:#775f50;background:#f5ebdf}.language-control option:hover{background:#efe3d5}}
+@media(max-width:600px){.language-control{margin-left:0}.language-control select{font-size:13px;min-width:98px;max-width:124px;padding:10px 8px}.brand-icon{width:32px!important;height:32px!important}.has-brand-icon{gap:5px}}

@@ -1,5 +1,7 @@
 # Mopple design review
 
+> This records the previous design-polish pass. The 7 October local Studio extension follows the same black/mint identity and is documented in [STUDIO_RELEASE.md](STUDIO_RELEASE.md).
+
 Reviewed the merged main branch across the landing page, editor, reviewed brief, render gallery, sun study, empty/populated home library, and public share page. Preserved the existing black/mint identity, Inter typography, offline engine, and reversible scroll-driven house demonstration.
 
 ## Skills and scope
@@ -32,3 +34,7 @@ Passed: production build, TypeScript lint, 73 unit tests, 10 multilingual genera
 Impeccable's manual detector ran once and returned no regex findings, but reported missing parser dependencies; automated contrast analysis was therefore incomplete. An edit hook also reported no deterministic issues for the editor CSS. These results do not certify visual quality or accessibility. Lighthouse was unavailable, so no Lighthouse or Core Web Vitals scores are claimed. Real-device Safari/touch behavior and solar-study frame rates remain unmeasured. Vite still reports the existing large Three.js chunk.
 
 The final motion findings and decision are in [ANIMATION_REVIEW.md](ANIMATION_REVIEW.md).
+
+### Courtyard reference (2026-10-10)
+
+The new surface follows the user's supplied black/mint three-section composition with a furnished overhead view, interactive cutaway, room properties, finish comparisons and delivery. The principal remaining fidelity gap is the procedural scene's asset and lighting quality versus the photorealistic reference. Matching the shell is not evidence that the 3D quality target has been met. The reference's inconsistent floor-plan/dollhouse arrangement is resolved into one editable two-level project.

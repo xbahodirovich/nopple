@@ -1,3 +1,4 @@
+import {DEFAULT_FURNITURE_SIZES} from './furniture-dimensions.ts';
 import { distance, polygonArea, roomPolygon } from './geometry.ts';
 import type { MoppleProject, Vector } from './schema.ts';
 
@@ -5,8 +6,8 @@ export interface ArchitectureMeasurement {
   id: string;
   floorId?: string;
   entityId?: string;
-  entityType?: 'wall' | 'room';
-  category: 'building' | 'room' | 'wall' | 'opening' | 'level';
+  entityType?: 'wall' | 'room' | 'object';
+  category: 'building' | 'room' | 'wall' | 'opening' | 'level' | 'furniture';
   name: string;
   value: number;
   unit: 'm' | 'm²';
@@ -64,6 +65,15 @@ export function architectureMeasurements(project: MoppleProject): ArchitectureMe
     add({ ...c, id: `${room.id}-depth`, name: `${room.name} · Z extent (centerlines)`, value: z1 - z0, start: v((x0 + x1) / 2, y + .12, z0), end: v((x0 + x1) / 2, y + .12, z1) });
     add({ ...c, id: `${room.id}-height`, name: `${room.name} · ceiling height`, value: room.height, start: v(x0, y, z0), end: v(x0, y + room.height, z0) });
     add({ ...c, id: `${room.id}-area`, name: `${room.name} · polygon area (centerlines)`, value: polygonArea(polygon), unit: 'm²', start: v((x0 + x1) / 2, y + .12, (z0 + z1) / 2), end: v((x0 + x1) / 2, y + .12, (z0 + z1) / 2) });
+  }
+  for (const object of project.interior.objects) {
+    const room=project.building.rooms.find(r=>r.id===object.roomId);if(!room)continue;
+    const fallback=DEFAULT_FURNITURE_SIZES[object.kind],w=(object.size?.x??fallback.width)*object.scale.x,d=(object.size?.z??fallback.depth)*object.scale.z,h=(object.size?.y??fallback.height)*object.scale.y;
+    const c=Math.cos(object.rotation.y),s=Math.sin(object.rotation.y);
+    const point=(x:number,y:number,z:number)=>v(object.position.x+c*x+s*z,object.position.y+y,object.position.z-s*x+c*z);
+    const common={floorId:room.floorId,entityId:object.id,entityType:'object' as const,category:'furniture' as const,unit:'m' as const};
+    for(const [dimension,value,start,end] of [['width',w,point(-w/2,.08,d/2+.15),point(w/2,.08,d/2+.15)],['depth',d,point(w/2+.15,.08,-d/2),point(w/2+.15,.08,d/2)],['height',h,point(-w/2,0,-d/2),point(-w/2,h,-d/2)]] as const)
+      add({...common,id:`${object.id}-${dimension}`,name:`${object.id} · ${dimension}`,value,start,end});
   }
   return result;
 }

@@ -1,69 +1,79 @@
-# Mopple landing page
+# Nopple
+
+A local-first home-design studio with reviewed requirements, synchronized floor plans and editable 3D, finish comparisons, saved versions, and share/export tools. The homepage and Editor follow the dark Air reference in `design.md`, with self-hosted Inter, condensed headlines and cloud/glass atmosphere. The advanced editor retains its detailed tools.
+
+## Run
+
+Use Node 24 or later:
 
 ```sh
 npm install
 npm run dev
 ```
 
-`npm run build` type-checks and builds into `dist/`. `npm run preview` serves that build. `npm test` checks the continuous animation timeline and the Mopple project engine.
+Open `/editor` for Editor, `/advanced` for the full Studio tools, `/homes` for your library, and `/` for architectural inspiration and Editor entry. Legacy `.html` links redirect automatically. No credentials are needed for the local workflow. The editor does not call AI endpoints: design commands are interpreted locally and always previewed before you apply them. AI integration is deferred.
 
-## Mopple Studio
+## Editor
 
-Open `/editor.html` (or `/editor` on the production server) for the shared 2D/3D editor. It supports furniture movement/rotation/scaling, room dimensions, wall endpoints, undo/redo, browser autosave and `.mopple` import/export. Mobile Layers and Properties buttons expose the same controls.
+Switch between architectural and furnished plans, or explore the 3D house. Select a room, wall or object to open its focused edit prompt. Preview supported local changes before applying, with undo and local saving. Architectural dimensions start enabled; interior dimensions are optional. Expand **Dimensions & schedules** to filter model measurements by level, category or search, export the filtered CSV, or download the current visible plan as SVG. Canvas labels prioritize overall dimensions and the selected wall/opening; the schedule supplies the complete measurements. Wall/room lengths use centerlines, overall extents use outer faces, and furniture dimensions exclude working clearances.
 
-New-house requests open a conversational requirements discovery dialog with an AI discovery assistant, interactive requirements form, reference attachment, draft persistence (`mopple_brief_draft`), and durable approval token verification. The architectural engine generates real multi-floor layouts (1–5 floors) with shared walls, doors, windows, ceiling slabs between floors, procedural stairs, and bathroom fixtures. Common edits still run offline:
+See [AI_SETUP.md](docs/AI_SETUP.md) for where to configure a future NVIDIA key; adding a key does not yet enable AI in Editor.
 
-- `Create a modern 150m² house with 3 bedrooms and 2 bathrooms`
-- `Move the sofa 1m left`
-- `Add a chair to the bedroom`
-- `Change living room floor to dark oak`
+## Advanced Studio: design → compare → share
 
-Generated houses feature shared coincident wall vertices, accurate room distributions, inter-floor vertical connections, and PBR 3D materials. A creation request replaces the design as one undoable operation. Use names or selection to distinguish repeated bedrooms/furniture. Arbitrary existing-design edits require the connected AI model.
+1. Choose **New home**, start with a compact, family, or courtyard brief, and review the requirements. You can also revise the existing home's brief. Approving a new home creates a separate project; undo returns to the previous design.
+2. Use **Plan / Split / 3D**, level controls, layers, and properties to edit. Local generation supports 1–5 floors, the requested bedroom/bathroom counts, offices, courtyard concepts, shared walls/openings, and aligned stair positions. Unsupported compact combinations fail before changing your design.
+3. Enter a supported command such as `remove the sofa` or `change living room floor to dark oak`. Review the actual before/after model captures, then choose **Apply change** or **Keep current**. Unsupported language produces guidance instead of guessing.
 
-For NVIDIA NIM, open AI Settings and supply a personal `nvapi-` key. Keys are kept in tab memory, not persisted; re-enter after reload. The client calls the same-origin `/api/ai/operations` endpoint for interactive edits and `/api/ai/generate` for durable generation jobs. The server sends the design to NVIDIA, bounds requests, validates returned operations and geometry, and reports errors without silently applying a different offline action. Concurrent/stale replies cannot overwrite edits.
+   Select a room, wall or furniture item in either view (or Layers) to open its contextual change prompt. Examples: `make it blue`, `move it 0.2m left`, `rotate 45 degrees`, `remove it`, or `change this floor to oak`. Preview images frame the selected room. The selection interpreter isolates the target and rejects whole-house lighting or another item's changes. Colors/finishes work on walls and furniture; wall geometry is edited through Properties. AI remains disconnected, so arbitrary conversational requests are not supported yet.
+4. **Compare finishes** renders Warm oak, Light stone, and Evening light from the same camera. Apply to the whole home or a selected room. Finishes preserve geometry, and applying them is undoable.
+5. **Render gallery** captures room views and street/facade perspectives at 1280, 1920, or 2560 px. Captures persist locally in IndexedDB for the matching project revision; design changes invalidate them. These are deterministic 3D scene images, not AI photographs.
+6. **Versions** restores a previous local design without losing undo. **My homes** shows plan previews, search, rename, duplication, deletion, and local/cloud histories.
+7. **Export home** downloads labelled PNG plans, a multipage raster PDF, a 3D screenshot, or the editable `.mopple` project. The ZIP home package includes all floor plans, dimensions, local room/exterior captures when WebGL is available, and a future render handoff. Share links open a read-only 3D viewer with a plan fallback.
 
-`npm run dev` and `npm run preview` include the API middleware. For production:
+Local snapshots and ten previous versions are saved on this browser/device. Download a project/package to keep an independent backup. Portable share links contain the project snapshot and cannot be revoked. Local captures are bounded to the twelve most recently captured projects and do not travel with cloud projects or `.mopple` files.
+
+## Optional cloud and future AI setup
+
+`.env.example` lists optional Supabase, telemetry, waitlist, canonical origin, and server settings. See [UPGRADE_SUMMARY.md](docs/UPGRADE_SUMMARY.md) and `supabase/001_alpha.sql` for setup. Cloud services were not provisioned or live-tested in this implementation. Cloud saves are serialized per editor session; concurrent writes from other devices still require conflict handling.
+
+The existing NVIDIA operations handler and Vercel adapters remain available for a later integration, but the Studio UI does not invoke them. `/api/ai/generate` is a process-local concept-generation endpoint, not durable storage or an image provider. Job status/cancellation require the random access token returned with the job; public job enumeration is disabled. Approval fingerprints include all brief requirement fields and detect changed inputs; they are not authentication or a server signature.
+
+Future image enhancement should consume actual model captures plus camera/material/geometry context. AI images are not implemented. Walkthrough navigation is deferred.
+
+## Validate
+
+```sh
+npm run build
+npm test
+npm run test:prompts
+npm run test:studio
+npm run test:selection
+npm run test:editor
+npm run test:alpha
+npm run test:architecture
+```
+
+The build includes strict TypeScript checking. Browser scripts start local servers and require Playwright Chromium (`npx playwright install chromium` if missing). `test:browser` and `test:lifecycle` require a dev server at port 5173. The studio acceptance script checks the entire local flow, persistent captures, ZIP exports, mobile layout, and zero AI requests. Review screenshots are ignored under `.impeccable/review/`.
+
+For a local production server:
 
 ```sh
 npm run build
 npm start
 ```
 
-The Node server (Node 24+) serves `dist` plus the AI endpoint on `127.0.0.1:3000`; `PORT` and `HOST` configure binding. A static-only host supports offline editing but needs this API service for connected AI. Never put provider keys in `VITE_*` variables. The service requires a caller-supplied key; it has no shared server credential or account database.
+The Node server defaults to `127.0.0.1:3000`. It does not automatically load `.env`; use Node's `--env-file=.env` if optional server variables are needed.
 
-## Project format
+## Boundaries
 
-The renderer-independent `.mopple` format, runtime validation, atomic project engine, operations and file helpers live in `src/project/`. See [format documentation](docs/mopple-format.md), [editor implementation](docs/editor-system.md), and [example house](examples/modern-house.mopple). The editor creates one engine shared by its views; the landing demonstration remains independent promotional geometry.
+Layouts are schematic concepts. Furniture is procedural; circulation/collision, engineering, building-code compliance, detailed site constraints, and budget feasibility are not certified. Reference attachments record filenames, not uploaded image/PDF contents. Room/exterior captures preserve the current model but do not provide ray-traced or AI photorealism. PDF plans are raster images, not CAD. WebGL is required for 3D; 2D and plan exports remain available without it. Three.js retains the existing large-bundle advisory.
 
-With the development server running, `npm run test:browser` checks four viewport widths, forward/reverse scrolling, pinned scene visibility, stage selection, reduced motion, CTA links, and WebGL fallback. `npm run test:lifecycle` checks pixel-identical scroll reversal, idle/offscreen rendering suspension, and context loss. Browser checks require Playwright Chromium (`npx playwright install chromium` if not already installed). Screenshots are written to `.impeccable/review/`.
+The renderer-independent meter-based version 1.0 `.mopple` model lives in `src/project/`; the same validated engine drives both editor views. The landing uses labelled AI-generated inspiration photography with reduced-motion-aware scroll reveals and image parallax; it mounts no editable house. Original `design.md`, `mopple-logo.png`, and `mopple-icon.png` are preserved.
 
-Run `npm test` for engine, AI, scene and timeline unit tests; `npm run test:editor` starts an isolated Vite server and checks the editor in Chromium, including mobile, unsafe imported names, save-on-exit and simulated provider failures. `npm run build` checks TypeScript and both page bundles. Vite reports its standard large-chunk advisory for Three.js. Live provider calls require a valid NVIDIA key; automated tests mock upstream responses.
+## Languages
 
-## Implementation
+Use the header language selector for English, Russian or Uzbek. The choice persists on this browser across the homepage, Editor, advanced tools, library and share page. It changes interface copy without rewriting saved project data. Supported localized edit examples are translated locally; this does not enable AI or general natural-language understanding.
 
-The landing page uses Vite + TypeScript with a lazy-loaded Three.js demonstration and links to Mopple Studio. The editor has a separate entry bundle; its Node AI proxy is included in development, preview, and the production server. Authentication and cloud project storage are not implemented.
-
-- `src/scene/HouseModel.ts`: one procedural 10 × 8 m house; all stages share geometry and room boundaries.
-- `src/scene/timeline.ts`: reversible scroll-position mapping from exterior → interior → floor plan, using sine easing and hold intervals.
-- `src/scene/HeroScene.ts`: camera, lighting, scroll-driven updates, visibility suspension, adaptive rendering, and disposal.
-- `src/fallback.ts`: matching SVG plan for loading and WebGL failures.
-- `src/styles.css`: responsive visual system. Inter is bundled locally, as allowed by `design.md`.
-
-The original `design.md` is unchanged. Its black canvas, typography, spacing, two-column composition, and minimal components are retained; the task's explicit Mopple direction supersedes the reference's Dala-specific violet and particles. The official `mopple-logo.png` appears in the header and footer, framed with CSS to remove its generous outer margins. `mopple-icon.png` supplies the tab favicon. Both original files remain unchanged.
-
-Scrolling down transforms the pinned house from exterior to interior to floor plan; scrolling up restores the exact earlier representation. Stage buttons scroll to the matching viewpoint. There is no timer-based playback. Reduced-motion preference removes pinning and scroll scrubbing; stage selection shows static views immediately. Rendering stops while idle, offscreen, or in a hidden tab. Mobile uses a lower pixel ratio without shadows, and slow renderers reduce quality further. Context loss falls back to the static plan.
-
-Three.js references: [renderer lifecycle](https://threejs.org/docs/pages/WebGLRenderer.html) and [orthographic projection](https://threejs.org/docs/pages/OrthographicCamera.html).
-
-## Alpha upgrade
-
-See [docs/UPGRADE_SUMMARY.md](docs/UPGRADE_SUMMARY.md) for the current cloud setup, environment variables, project library, sharing, exports and acceptance checks. Hosted AI credentials belong on the server; visitors can use the offline designer without a key or account.
-## Architecture, Render Gallery, and Solar Study
-
-Use **House brief** to collect requirements conversationally, review structured questions, attach references, and generate a durable approval token. **Render gallery** opens the Studio Interior Render Gallery with room viewpoints captured at physical eye level (1.6m), locked to project sun coordinates, with geometry-grounded visual prompts and high-resolution export. **Render plan** exports the complete generation plan and brief.
-
-Sun controls provide manual azimuth (0–360°), elevation (1–90°), warmth (0–100%), and intensity (0.5–5.0), with live Three.js directional lighting, golden hour simulation, persistent `metadata.sun`, autosave, and undo/redo. The Cutaway HUD button toggles upper roof/ceiling visibility for plan inspection. Map and underlay components are permanently removed. Legacy geolocation metadata remains accepted for file compatibility.
-
-### 3D architecture and exterior review
-
-Open Studio → **3D Scene**. Use the viewport’s **3D view**, **Level**, and **Dimensions** controls; expand **Measurement schedule** to inspect model distances or export CSV. **Render gallery → Exterior & street** captures the street perspective and four facades from the same house used for interiors. Model dimensions distinguish centerlines from outer faces; front is the +Z side.
+### Warm design and motion
+The October 2026 video reference now informs layered scroll movement, a growing photographic panel and staggered section reveals, with reduced-motion support. The user-approved warm direction uses ivory, walnut and clay; nopple-icon.png is the logo and favicon. Native language menus have matching options and touch targets. Responsive QA covers 320–1920px and all three languages (`node scripts/check-warm.mjs`). AI remains disconnected.

@@ -1,3 +1,7 @@
+import {initLanguage} from '../i18n/index.ts';
+import { createStudio } from './studio.ts';
+import { createSelectionEditor } from './selection-editor.ts';
+import { previewLocalEdit } from '../project/preview.ts';
 import { track } from '../alpha/telemetry.ts';
 import { shareHome } from '../alpha/projects.ts';
 import { exportPlan, download } from '../alpha/exporters.ts';
@@ -5,13 +9,14 @@ import { saveHome, saveLocation } from '../alpha/projects.ts';
 import { errorMessage, labelControls, reportEditorError } from './ui.ts';
 import '@fontsource-variable/inter';
 import './editor.css';
+import './studio.css';
 import example from '../../examples/modern-house.mopple?raw';
 import { downloadMoppleFile, importMoppleFile } from '../project/files.ts';
 import { MoppleProjectEngine } from '../project/engine.ts';
 import { roomPolygon } from '../project/geometry.ts';
 import type { MoppleInteriorObject } from '../project/schema.ts';
 import { parseProject } from '../project/validation.ts';
-import { executeAiPrompt, isHouseRequest, getStoredApiKey, getStoredModel, setStoredApiKey, setStoredModel } from './ai.ts';
+import { isHouseRequest, getStoredApiKey, getStoredModel, setStoredApiKey, setStoredModel } from './ai.ts';
 import { Canvas2D, type SelectedEntity } from './canvas2d.ts';
 import { createArchitectureControls } from './architecture.ts';
 import { Canvas3D } from './canvas3d.ts';
@@ -24,7 +29,8 @@ import { DEFAULT_SUN } from './solar.ts';
 import type { MoppleSun } from '../project/schema.ts';
 import { DEFAULT_GEO } from './site.ts';
 
-const AUTOSAVE_STORAGE_KEY = 'mopple_editor_project';
+const routeParams=new URLSearchParams(location.search);
+const AUTOSAVE_STORAGE_KEY = routeParams.get('home') ? 'mopple_draft_'+routeParams.get('home') : routeParams.get('source')==='courtyard' ? 'mopple_courtyard_studio_v1' : 'mopple_editor_project';
 
 // Initialize Project Engine from local storage or fallback example
 function initializeEngine(): MoppleProjectEngine {
@@ -89,10 +95,18 @@ export function initEditor() {
   try { canvas3d = new Canvas3D(pane3D, { engine, onSelect: entity => handleSelect(entity), onError: reportEditorError }); }
   catch { pane3D.textContent = '3D is unavailable in this browser. You can continue editing in 2D.'; showStatus('WebGL is unavailable; 2D editing is still available.', 'error'); }
 
+  canvas3d?.setViewPreset('cutaway');
+  const studio = createStudio(engine, () => canvas3d, showStatus);
+  const selectionEditor=createSelectionEditor(document.querySelector<HTMLElement>('.viewport-container')!,engine,preview=>studio.review(preview));
+  cleanups.push(()=>selectionEditor.destroy());
+  cleanups.push(() => studio.destroy());
+  document.querySelector('#studio-composer')?.append(document.querySelector('.ai-floating-bar')!);
+
   for (const format of ['png','pdf'] as const) document.getElementById(`export-${format}`)?.addEventListener('click',()=>{ track('export_clicked',{format}); void exportPlan(engine.getSnapshot(),format).catch(e=>showStatus(errorMessage(e),'error')); });
   document.getElementById('export-3d')?.addEventListener('click',()=>{track('export_clicked',{format:'3d'});if(!canvas3d){showStatus('3D is unavailable in this browser.','error');return;}void canvas3d.screenshot().then(blob=>download(blob,'mopple-3d.png')).catch(e=>showStatus(errorMessage(e),'error'));});
   document.getElementById('share-home')?.addEventListener('click',()=>{void shareHome(engine.getSnapshot()).then(async url=>{track('home_shared');try{await navigator.clipboard.writeText(url);showStatus('Read-only share link copied.','success');}catch{const link=document.createElement('a');link.href=url;link.textContent='Open your share link';link.target='_blank';link.rel='noopener';document.querySelector('.workspace-tools')?.append(link);showStatus('Share link ready. Open it to copy the address.','success');}}).catch(e=>showStatus(errorMessage(e),'error'));});
   const architectureControls = canvas3d ? createArchitectureControls(pane3D, engine, canvas3d, entity => handleSelect(entity)) : undefined;
+  architectureControls?.setView('cutaway');
   if (architectureControls) cleanups.push(() => architectureControls.destroy());
 
   // 2. Instantiate Panels
@@ -108,7 +122,7 @@ export function initEditor() {
     onExport: () => handleExport(),
     onImport: () => triggerFileInput(),
     onDeleteSelected: () => handleDeleteSelected(),
-    onOpenApiKeyModal: () => openApiKeyModal(),
+    onOpenApiKeyModal: () => showStatus('AI connection is reserved for the final integration. Local previews are available now.', 'success'),
   });
 
   // Synchronized Selection Handler
@@ -118,6 +132,7 @@ export function initEditor() {
     canvas3d?.setSelection(entity);
     layersPanel.setSelection(entity);
     propertyPanel.setSelection(entity);
+    selectionEditor.setSelection(entity);
   }
 
   // Add Furniture Helper
@@ -233,7 +248,8 @@ export function initEditor() {
     if (saveDebounceTimer !== null) clearTimeout(saveDebounceTimer);
     saveDebounceTimer = null;
     if (!pendingSave) return;
-    try { localStorage.setItem(AUTOSAVE_STORAGE_KEY, engine.saveProject()); pendingSave = false; saveText.textContent = 'Saved locally'; void saveHome(engine.getSnapshot()).then(() => { saveText.textContent = saveLocation(); track('home_saved'); }).catch(() => { saveText.textContent = 'Saved locally'; }); }
+    const saveRevision = engine.revision;
+    try { localStorage.setItem(AUTOSAVE_STORAGE_KEY, engine.saveProject()); pendingSave = false; saveText.textContent = 'Saved locally'; void saveHome(engine.getSnapshot()).then(() => { if(engine.revision === saveRevision)saveText.textContent = saveLocation(); track('home_saved'); }).catch(() => { if(engine.revision === saveRevision)saveText.textContent = 'Saved locally'; }); }
     catch { saveText.textContent = 'Not saved'; showStatus('Browser storage is unavailable or full. Export your project to keep your changes.', 'error'); }
   }
   projectTitle.value = engine.getSnapshot().project.name;
@@ -297,30 +313,18 @@ export function initEditor() {
 
   // AI Engine Badge Synchronization
   function updateEngineBadge() {
-    const hasKey = Boolean(getStoredApiKey());
-    const model = getStoredModel();
     if (!aiEngineBadge || !engineBadgeText) return;
-
-    if (hasKey) {
-      aiEngineBadge.classList.add('active-gemini', 'active-nim');
-      const isGlm = model.includes('glm');
-      const label = isGlm ? 'GLM 5.3 Flash' : (model.includes('llama') ? 'Llama 3.3 70B' : (model.includes('deepseek') ? 'DeepSeek R1' : 'NVIDIA NIM'));
-      engineBadgeText.textContent = `⚡ ${label}`;
-      aiEngineBadge.title = `Using ${model} via NVIDIA NIM. Click to configure model or API key.`;
-    } else {
-      aiEngineBadge.classList.remove('active-gemini', 'active-nim');
-      engineBadgeText.textContent = 'Offline Engine';
-      aiEngineBadge.title = 'Running local semantic engine. Click to connect NVIDIA NIM (GLM 5.3 Flash).';
-    }
+    engineBadgeText.textContent = 'Local designer';
+    aiEngineBadge.title = 'Design commands run locally. AI is not connected.';
   }
-
-  aiEngineBadge?.addEventListener('click', () => openApiKeyModal());
   updateEngineBadge();
+  aiEngineBadge?.addEventListener('click', () => showStatus('Commands and captures run locally. AI can be connected later.', 'success'));
 
   const houseBrief = createBriefDialog(engine, () => {
     track('home_generated', {source:'local_architecture'});
-    aiInput.value = ''; handleSelect(null); canvas2d.resetView(); canvas3d?.resetCamera();
-    showStatus('Starter floor plan and 3D concept created. Full requirements saved. Detailed architecture and interior images still need the full generator.', 'success');
+    aiInput.value = ''; handleSelect(null); canvas2d.resetView(); canvas3d?.setFloor(engine.getSnapshot().building.floors[0]?.id ?? null); canvas3d?.resetCamera();
+    const level = document.querySelector<HTMLSelectElement>('#architecture-floor'); if(level)level.value=engine.getSnapshot().building.floors[0]?.id ?? '';
+    showStatus('Your home is ready. Compare finishes, capture room views, or export the complete design.', 'success');
   });
   const renderPlanButton = document.getElementById('btn-render-plan') as HTMLButtonElement;
   function syncRenderPlan() { renderPlanButton.disabled = !engine.getSnapshot().metadata.designBrief; }
@@ -343,6 +347,9 @@ export function initEditor() {
     if (!aiBusy) renderGallery.open();
   });
 
+  document.getElementById('studio-edit-brief')?.addEventListener('click', () => houseBrief.open());
+  document.getElementById('btn-new-home')?.addEventListener('click', () => houseBrief.open('Describe your new home', true));
+
   // One outstanding request; errors preserve input and never guess a fallback edit.
   let aiBusy = false;
   async function runAiPrompt(promptText: string) {
@@ -352,12 +359,12 @@ export function initEditor() {
     if (isHouseRequest(text)) { houseBrief.open(text); return; }
     aiBusy = true; aiSubmit.disabled = true;
     document.querySelectorAll<HTMLButtonElement>('.ai-chip').forEach(b => b.disabled = true);
-    showStatus(getStoredApiKey() ? `Asking ${getStoredModel()}…` : 'Applying offline design command…', 'loading');
+    showStatus('Preparing a local preview…', 'loading');
     try {
-      const result = await executeAiPrompt(text, engine, selectedEntity?.id);
-      if(engineBadgeText)engineBadgeText.textContent=result.source==='nvidia_nim'?'Hosted AI':'Offline Engine';
-      track(isHouseRequest(text) ? 'home_generated' : 'home_edited', {source:result.source}); showStatus(result.message, 'success'); aiInput.value = ''; handleSelect(null);
-      if (isHouseRequest(text)) { canvas2d.resetView(); canvas3d?.resetCamera(); }
+      const preview = previewLocalEdit(engine, text, selectedEntity?.id);
+      studio.review(preview);
+      showStatus('Preview ready. Review the change before applying it.', 'success');
+      aiInput.value = '';
     } catch (error) { showStatus(errorMessage(error), 'error'); }
     finally { aiBusy = false; aiSubmit.disabled = false; document.querySelectorAll<HTMLButtonElement>('.ai-chip').forEach(b => b.disabled = false); syncRenderPlan(); }
   }
@@ -628,7 +635,7 @@ export function initEditor() {
   // Global Keyboard Shortcuts
   window.addEventListener('keydown', e => {
     const target = e.target as HTMLElement;
-    if (apiKeyModal.classList.contains('show') || briefDialog.open || renderGallery.dialog.open) return;
+    if (apiKeyModal.classList.contains('show') || document.querySelector('dialog[open]')) return;
     if(e.key==='Escape' && isSolarOpen){toggleSolarPanel(false);hudSolarToggle?.focus();return;}
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
       return;
@@ -686,7 +693,7 @@ export function initEditor() {
     floorPicker.value = floors.some(f => f.id === selected) ? selected : floors[0]?.id ?? '';
     if (floorPicker.value) canvas2d.setFloor(floorPicker.value);
   }
-  floorPicker.addEventListener('change', () => canvas2d.setFloor(floorPicker.value)); syncFloorPicker();
+  floorPicker.addEventListener('change', () => { canvas2d.setFloor(floorPicker.value); canvas3d?.setFloor(floorPicker.value); const picker = document.querySelector<HTMLSelectElement>('#architecture-floor'); if(picker)picker.value=floorPicker.value; }); syncFloorPicker();
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-panel]')) button.addEventListener('click', () => {
     const panel = button.dataset.panel!;
     document.querySelectorAll<HTMLElement>('.panel-sidebar, .panel-properties').forEach(p => p.classList.toggle('mobile-open', p.id === panel && !p.classList.contains('mobile-open')));
@@ -713,3 +720,7 @@ if (typeof document !== 'undefined') {
     initEditor();
   }
 }
+
+initLanguage();
+
+import "../reference-theme.css";

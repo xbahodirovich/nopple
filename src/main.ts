@@ -135,7 +135,7 @@ const loadObserver = new IntersectionObserver(async entries => {
     measure();
     loading.hidden = true;
   } catch (error) {
-    console.warn('Mopple: showing the static floor plan.', error);
+    console.warn('Nopple: showing the static floor plan.', error);
     failure();
   }
 }, { rootMargin: '200px' });

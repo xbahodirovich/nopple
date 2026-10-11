@@ -16,7 +16,7 @@ function token(): string | undefined {
 export const isSignedIn = () => Boolean(token());
 export function signIn() {
  if (!cloudConfigured) throw new Error('Cloud accounts are not configured. Your homes are saved on this device.');
- location.href = `${url}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(location.origin+'/homes.html')}`;
+ location.href = `${url}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(location.origin+'/homes')}`;
 }
 export function signOut() { const access=token();sessionStorage.removeItem('mopple_auth');if(url&&key&&access)void fetch(`${url}/auth/v1/logout`,{method:'POST',headers:{apikey:key,Authorization:`Bearer ${access}`}}).catch(()=>{}); }
 let refreshing: Promise<void> | undefined;
@@ -33,39 +33,60 @@ async function rest(path: string, init: RequestInit = {}, publicRead = false) {
  if (!response.ok) throw new Error('Cloud saving unavailable. Your local copy is kept.');
  return response.status === 204 ? null : response.json();
 }
-export function localHomes(): SavedHome[] { try { return JSON.parse(localStorage.getItem(storageKey) ?? '[]'); } catch { return []; } }
+export function localHomes(): SavedHome[] {
+ try {
+  const rows: unknown = JSON.parse(localStorage.getItem(storageKey) ?? '[]');
+  if (!Array.isArray(rows)) return [];
+  return rows.flatMap(row => {
+   try {
+    const model = validateProject(row.model);
+    const versions = Array.isArray(row.versions) ? row.versions.flatMap((version: unknown) => { try { return [validateProject(version)]; } catch { return []; } }).slice(0,10) : [];
+    return [{ id: model.project.id, name: model.project.name, model, versions }];
+   } catch { return []; }
+  });
+ } catch { return []; }
+}
 function write(homes: SavedHome[]) { localStorage.setItem(storageKey, JSON.stringify(homes)); }
 export async function listHomes(): Promise<SavedHome[]> {
+ try {
  await refreshSession();
  if (!cloudConfigured || !token()) return localHomes();
  const rows = await rest('projects?select=id,name,model,versions&order=updated_at.desc');
  const merged = new Map(localHomes().map(h => [h.id,h]));
  for (const h of rows) if (!merged.has(h.id) || Date.parse(h.model.project.updatedAt) > Date.parse(merged.get(h.id)!.model.project.updatedAt)) merged.set(h.id,h);
  return [...merged.values()];
+ } catch { window.dispatchEvent(new CustomEvent('mopple-storage-warning', {detail:'Cloud is unavailable. Showing the homes saved on this device.'})); return localHomes(); }
 }
+let cloudSaveQueue: Promise<unknown> = Promise.resolve();
 export async function saveHome(input: MoppleProject) {
  const model = validateProject(input), homes = localHomes(), previous = homes.find(h => h.id === model.project.id);
- const versions = previous ? [previous.model, ...previous.versions].slice(0,10) : [];
+ const same = previous && JSON.stringify(previous.model) === JSON.stringify(model);
+ const versions = previous ? same ? previous.versions : [previous.model, ...previous.versions].slice(0,10) : [];
  const home = {id:model.project.id,name:model.project.name,model,versions};
  write([home,...homes.filter(h => h.id !== home.id)]);
- await refreshSession();
- if (cloudConfigured && token()) await rest('rpc/save_home', {method:'POST',body:JSON.stringify({home_id:home.id,home_name:home.name,home_model:model})});
+ const save = cloudSaveQueue.catch(() => {}).then(async () => {
+  await refreshSession();
+  if (cloudConfigured && token()) await rest('rpc/save_home', {method:'POST',body:JSON.stringify({home_id:home.id,home_name:home.name,home_model:model})});
+ });
+ cloudSaveQueue = save; await save;
  return home;
 }
 export async function deleteHome(id: string) {
+ await cloudSaveQueue.catch(() => {}); await refreshSession();
  if (cloudConfigured && token()) await rest(`projects?id=eq.${encodeURIComponent(id)}`,{method:'DELETE'});
  write(localHomes().filter(h => h.id !== id));
 }
 export async function shareHome(model: MoppleProject): Promise<string> {
+ await refreshSession();
  if (cloudConfigured && token()) {
   await saveHome(model);
   const rows = await rest(`projects?id=eq.${encodeURIComponent(model.project.id)}`,{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({shared:true})});
-  return `${location.origin}/share.html?id=${rows[0].share_id}`;
+  return `${location.origin}/share?id=${rows[0].share_id}`;
  }
  const bytes = new TextEncoder().encode(JSON.stringify(model));
  if (bytes.length > 100000) throw new Error('This home is too large for a portable link. Sign in for cloud sharing.');
  const encoded = btoa(Array.from(bytes,b => String.fromCharCode(b)).join(''));
- return `${location.origin}/share.html#home=${encodeURIComponent(encoded)}`;
+ return `${location.origin}/share#home=${encodeURIComponent(encoded)}`;
 }
 export async function loadShared(): Promise<MoppleProject> {
  const id = new URLSearchParams(location.search).get('id');

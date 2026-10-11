@@ -116,7 +116,7 @@ export function calculateSolarPosition(state: SolarState, radius = 45): SolarPos
   }
 
   // Effective azimuth relative to house North orientation
-  // In Mopple: -Z is North, +X is East, +Z is South, -X is West.
+  // In Nopple: -Z is North, +X is East, +Z is South, -X is West.
   const effectiveAzimuthRad = azimuthRad - (northAngle * DEG2RAD);
   const effectiveElevationRad = Math.max(-Math.PI / 4, elevationRad);
 

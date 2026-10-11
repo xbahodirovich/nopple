@@ -43,10 +43,11 @@ export function buildDesignScene(project: MoppleProject) {
       let metalness = m?.metalness ?? 0;
 
       if (cat === 'wood' || name.includes('wood') || name.includes('oak') || name.includes('parquet')) {
-        map = getWoodPlankTexture(m?.color ?? color, 3, 3);
+        map = getWoodPlankTexture(m?.color ?? color, kind==='floor'?.18:1, kind==='floor'?.18:1);
         roughness = m?.roughness ?? 0.45;
       } else if (cat === 'stone' || name.includes('stone') || name.includes('marble') || name.includes('granite')) {
-        map = getMarbleTexture(2, 2);
+        map = kind==='floor' && courtyard ? getTileTexture(m?.color??color,1.25,1.25) : getMarbleTexture(2, 2);
+        if(kind==='floor'&&courtyard){bumpMap=map;bumpScale=.012;}
         roughness = m?.roughness ?? 0.25;
       } else if (cat === 'tile' || name.includes('tile') || name.includes('slate') || name.includes('ceramic')) {
         map = getTileTexture(m?.color ?? color, 4, 4);
@@ -60,12 +61,14 @@ export function buildDesignScene(project: MoppleProject) {
         metalness = m?.metalness ?? 0.1;
       }
 
-      result = new THREE.MeshStandardMaterial({
-        color: m?.color ?? color,
+      const glass = cat === 'glass' || name.includes('glass') || color === '#a8c6be';
+      result = new THREE.MeshPhysicalMaterial({
+        color: map && (cat === 'wood' || (cat==='stone'&&kind==='floor'&&courtyard)) ? '#ffffff' : m?.color ?? color,
         roughness,
         metalness,
         opacity,
         transparent: opacity < 1,
+        ...(glass ? {metalness:0,roughness:.08,depthWrite:false,envMapIntensity:1.2,clearcoat:1,clearcoatRoughness:.05} : {}),
         side: THREE.DoubleSide,
         ...(map ? { map } : {}),
         ...(bumpMap ? { bumpMap, bumpScale } : {})
@@ -76,54 +79,62 @@ export function buildDesignScene(project: MoppleProject) {
   }
 
   // Architectural site ground plinth (procedural grass)
-  const siteSize = 64;
+  const courtyard = project.project.id === 'courtyard_residence';
+  const siteScale=courtyard ? Math.sqrt(180/150.785) : 1;
+  const siteSize = courtyard ? 14*siteScale : 64;
   const groundGeo = new THREE.BoxGeometry(siteSize, 0.4, siteSize);
   const groundMat = new THREE.MeshStandardMaterial({
-    color: '#223326',
+    color: '#ffffff',
     roughness: 0.9,
     metalness: 0.05,
-    map: getLawnTexture(8),
+    map: courtyard ? getTileTexture('#b7b1a0',12,12) : getLawnTexture(8),
   });
   const groundMesh = new THREE.Mesh(groundGeo, groundMat);
   groundMesh.name = 'site_ground_plinth';
   groundMesh.position.y = -0.32;
+  if(courtyard) groundMesh.position.set(5.3*siteScale,-.32,5*siteScale);
   groundMesh.receiveShadow = true;
   building.add(groundMesh);
 
   for (const room of views.rooms) {
     const shape = new THREE.Shape(room.polygon.map(p => new THREE.Vector2(p.x, -p.z)));
     const floor = views.floors.find(f => f.id === room.floorId)!;
+    const withStairOpening = (ceiling: boolean) => {
+      const slab = new THREE.Shape(room.polygon.map(p => new THREE.Vector2(p.x, -p.z)));
+      for (const stair of project.interior.objects.filter(object => object.kind === 'stairs')) {
+        const belongs = ceiling ? stair.roomId === room.id : room.type === 'hallway' && Math.abs(stair.position.y + (stair.size?.y ?? 2.8) - floor.elevation) < .05;
+        if (!belongs) continue;
+        const sideways = Math.abs(Math.sin(stair.rotation.y)) > .7;
+        const halfX = (sideways ? stair.size?.z ?? 3.2 : stair.size?.x ?? 1.2) / 2 + .06;
+        const halfZ = (sideways ? stair.size?.x ?? 1.2 : stair.size?.z ?? 3.2) / 2 + .06;
+        const x = stair.position.x, z = stair.position.z;
+        const xs = room.polygon.map(p => p.x), zs = room.polygon.map(p => p.z);
+        if(x-halfX<=Math.min(...xs)||x+halfX>=Math.max(...xs)||z-halfZ<=Math.min(...zs)||z+halfZ>=Math.max(...zs))continue;
+        const hole = new THREE.Path(); hole.moveTo(x-halfX,-z-halfZ); hole.lineTo(x-halfX,-z+halfZ); hole.lineTo(x+halfX,-z+halfZ); hole.lineTo(x+halfX,-z-halfZ); hole.closePath(); slab.holes.push(hole);
+      }
+      return slab;
+    };
     // Floor slab
-    const floorMesh = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: .12, bevelEnabled: false }), material(room.materials?.floor, '#c4b59f', 'floor'));
+    const floorMesh = new THREE.Mesh(new THREE.ExtrudeGeometry(withStairOpening(false), { depth: .12, bevelEnabled: false }), material(room.materials?.floor, '#c4b59f', 'floor'));
     floorMesh.rotation.x = -Math.PI / 2; floorMesh.position.y = floor.elevation - .12;
     floorMesh.receiveShadow = true; floorMesh.userData = { roomId: room.id, floorId: floor.id }; building.add(floorMesh);
 
+    if (/courtyard|patio|garden/i.test(room.name) && room.type === 'custom') continue;
     // Ceiling slab
-    const ceilMesh = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: .08, bevelEnabled: false }), material(room.materials?.wall, '#ded9cf', 'wall'));
+    const ceilMesh = new THREE.Mesh(new THREE.ExtrudeGeometry(withStairOpening(true), { depth: .08, bevelEnabled: false }), material(room.materials?.ceiling ?? room.materials?.wall, '#ded9cf', 'wall'));
     ceilMesh.rotation.x = -Math.PI / 2; ceilMesh.position.y = floor.elevation + room.height;
     ceilMesh.receiveShadow = true; ceilMesh.userData = { isCeiling: true, ceilingRoomId: room.id, floorId: floor.id };
     building.add(ceilMesh);
   }
 
-  // Top roof structure covering the building
-  if (views.rooms.length > 0) {
-    const allPoints = views.rooms.flatMap(r => r.polygon);
-    const xs = allPoints.map(p => p.x), zs = allPoints.map(p => p.z);
-    const minX = Math.min(...xs), maxX = Math.max(...xs), minZ = Math.min(...zs), maxZ = Math.max(...zs);
-    const topFloor = views.floors.reduce((max, f) => (f.elevation > max.elevation ? f : max), views.floors[0]);
-    const roofY = topFloor ? topFloor.elevation + topFloor.height + 0.1 : 3.0;
-
-    const roofWidth = (maxX - minX) + 0.7;
-    const roofDepth = (maxZ - minZ) + 0.7;
-    const roofGeo = new THREE.BoxGeometry(roofWidth, 0.22, roofDepth);
-    const roofMat = material('house_stone', '#363d3a', 'other');
-    const roofMesh = new THREE.Mesh(roofGeo, roofMat);
-    roofMesh.position.set((minX + maxX) / 2, roofY + 0.11, (minZ + maxZ) / 2);
-    roofMesh.castShadow = true;
-    roofMesh.receiveShadow = true;
-    roofMesh.name = 'building_roof';
-    roofMesh.userData = { isRoof: true };
-    building.add(roofMesh);
+  // Each top-level room contributes its own roof, leaving courtyards open.
+  const topFloor = views.floors.reduce<typeof views.floors[number] | undefined>((top, floor) => !top || floor.elevation > top.elevation ? floor : top, undefined);
+  for (const room of views.rooms.filter(room => room.floorId === topFloor?.id && !/courtyard|patio|garden/i.test(room.name))) {
+    const shape = new THREE.Shape(room.polygon.map(point => new THREE.Vector2(point.x, -point.z)));
+    const roof = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: .18, bevelEnabled: false }), material('house_stone', '#363d3a'));
+    roof.rotation.x = -Math.PI / 2; roof.position.y = topFloor!.elevation + topFloor!.height + .08;
+    roof.castShadow = true; roof.receiveShadow = true; roof.name = `roof_${room.id}`; roof.userData.isRoof = true;
+    building.add(roof);
   }
 
   for (const wall of views.walls) {
@@ -136,7 +147,7 @@ export function buildDesignScene(project: MoppleProject) {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, y1 - y0, thickness), mat);
       mesh.position.set((x0 + x1) / 2, (y0 + y1) / 2, 0); mesh.castShadow = true; mesh.receiveShadow = true;
       if (selectable) mesh.userData.wallId = wall.id;
-      group.add(mesh);
+      group.add(mesh); return mesh;
     }
     const holes = wall.openings.map(o => ({ ...o, left: o.position * wall.length - o.width / 2, right: o.position * wall.length + o.width / 2, bottom: o.sillHeight, top: o.sillHeight + o.height }));
     const xs = [...new Set([0, wall.length, ...holes.flatMap(o => [o.left, o.right])])].sort((a, b) => a - b);
@@ -145,25 +156,59 @@ export function buildDesignScene(project: MoppleProject) {
       const cx = (xs[x] + xs[x + 1]) / 2, cy = (ys[y] + ys[y + 1]) / 2;
       if (!holes.some(h => cx > h.left && cx < h.right && cy > h.bottom && cy < h.top)) box(xs[x], xs[x + 1], ys[y], ys[y + 1], wall.thickness, wallMaterial, true);
     }
+    // Skirting follows the wall's real openings instead of bridging doorways.
+    for (let x = 0; x < xs.length - 1; x++) {
+      const center=(xs[x]+xs[x+1])/2;
+      if (!holes.some(h=>h.kind==='door' && center>h.left && center<h.right)) box(xs[x],xs[x+1],0,.085,wall.thickness+.028,material(undefined,'#d2c7b8'));
+    }
+    const exterior = views.rooms.filter(r=>r.boundary.some(edge=>edge.wallId===wall.id)).length === 1;
+    if (exterior) {
+      const plinth=box(0,wall.length,-.22,.04,wall.thickness+.055,material(undefined,'#a7a298'));
+      if(plinth)plinth.name=`foundation_${wall.id}`;
+      if(wall.floorId===topFloor?.id && !/courtyard|patio|garden/i.test(room?.name??'')) {
+        const coping=box(-.04,wall.length+.04,wall.height+.08,wall.height+.19,wall.thickness+.13,material(undefined,'#434c47'));
+        if(coping){coping.name=`coping_${wall.id}`;coping.userData.isRoof=true;}
+      }
+    }
     for (const opening of holes) {
       const { left, right, bottom, top } = opening;
       if (opening.kind === 'door') {
         // Door frame and door panel with metallic handle
-        const frameMat = material(undefined, '#293531');
+        const frameMat = material(undefined, '#c5b7a2');
         const doorPanelMat = material(opening.materialId, '#8c6e52');
-        box(left, right, bottom, top, .04, doorPanelMat);
-        box(left, left + 0.05, bottom, top, .07, frameMat);
-        box(right - 0.05, right, bottom, top, .07, frameMat);
-        box(left, right, top - 0.05, top, .07, frameMat);
+        box(left, right, bottom, top, .045, doorPanelMat);
+        box(left-.025, left + .04, bottom, top+.025, wall.thickness+.04, frameMat);
+        box(right - .04, right+.025, bottom, top+.025, wall.thickness+.04, frameMat);
+        box(left, right, top - .04, top+.025, wall.thickness+.04, frameMat);
+        for(const side of [-1,1]) {
+          const plate=new THREE.Mesh(new THREE.BoxGeometry(.035,.15,.012),material(undefined,'#424945')); plate.position.set(right-.14,bottom+1,side*.034); group.add(plate);
+          const handle=new THREE.Mesh(new THREE.CylinderGeometry(.009,.009,.12,12),material(undefined,'#424945'));handle.rotation.z=Math.PI/2;handle.position.set(right-.18,bottom+1.04,side*.065);handle.castShadow=true;group.add(handle);
+        }
       } else {
         const frame = Math.min(.04, opening.width / 4, opening.height / 4);
         const frameMaterial = material(undefined, '#293531');
-        box(left, left + frame, bottom, top, .07, frameMaterial); box(right - frame, right, bottom, top, .07, frameMaterial);
-        box(left + frame, right - frame, bottom, bottom + frame, .07, frameMaterial); box(left + frame, right - frame, top - frame, top, .07, frameMaterial);
-        box(left + frame, right - frame, bottom + frame, top - frame, .02, material(opening.materialId ?? 'house_glass', '#a8c6be'));
+        box(left, left + frame, bottom, top, wall.thickness+.025, frameMaterial); box(right - frame, right, bottom, top, wall.thickness+.025, frameMaterial);
+        box(left + frame, right - frame, bottom, bottom + frame, wall.thickness+.025, frameMaterial); box(left + frame, right - frame, top - frame, top, wall.thickness+.025, frameMaterial);
+        if(opening.width>1.4)box((left+right)/2-.012,(left+right)/2+.012,bottom+frame,top-frame,.07,frameMaterial);
+        const pane=box(left + frame, right - frame, bottom + frame, top - frame, .012, material(opening.materialId ?? 'house_glass', '#a8c6be'));
+        if(pane){pane.castShadow=false;pane.name=`glazing_${opening.id}`;}
+        const sill=box(left-.045,right+.045,bottom-.035,bottom,wall.thickness+.12,material(undefined,'#bab7ae'));
+        if(sill)sill.name=`sill_${opening.id}`;
       }
     }
+    if(courtyard && wall.floorId==='upper' && !(wall.start.z===0&&wall.end.z===0) && !(wall.start.x===0&&wall.end.x===0)) {
+      group.traverse(node=>{if(node instanceof THREE.Mesh){node.material=Array.isArray(node.material)?node.material.map(m=>m.clone()):node.material.clone();node.userData.cutawayHeight=wall.baseElevation+.95;}});
+    }
     building.add(group);
+  }
+  if(courtyard) {
+    const timber=material('oak');
+    // Front brise-soleil screens and the fine reveal below the upper volume.
+    for(let i=0;i<33;i++) {
+      const slat=new THREE.Mesh(new THREE.BoxGeometry(.055,2.65,.1),timber);
+      slat.position.set((.2+i*.082)*siteScale,1.36,10.13*siteScale);slat.castShadow=true;slat.receiveShadow=true;
+      slat.userData.floorId='ground';building.add(slat);
+    }
   }
   for (const object of project.interior.objects) furniture.add(createFurnitureMesh(object, definitions));
   for (const light of project.lighting) {
@@ -173,7 +218,7 @@ export function buildDesignScene(project: MoppleProject) {
       const sun = new THREE.DirectionalLight(light.color, light.intensity);
       sun.position.set(light.position.x, light.position.y, light.position.z);
       sun.target.position.set(light.target.x, light.target.y, light.target.z); lighting.add(sun.target);
-      sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024); sun.shadow.bias = -.0004; sun.shadow.normalBias = .035;
+      sun.castShadow = true; sun.shadow.mapSize.set(courtyard?2048:1024, courtyard?2048:1024); sun.shadow.bias = -.0004; sun.shadow.normalBias = .035;
       Object.assign(sun.shadow.camera, { left: -25, right: 25, top: 25, bottom: -25, far: 100 }); sun.shadow.camera.updateProjectionMatrix(); node = sun;
     } else {
       const point = new THREE.PointLight(light.color, light.intensity, light.range);

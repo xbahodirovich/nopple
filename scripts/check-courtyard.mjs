@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import {chromium} from '@playwright/test';
+import {createServer} from 'vite';
+import {mkdir} from 'node:fs/promises';
+const server=await createServer({server:{host:'127.0.0.1',port:5181,hmr:false}});let browser;
+try{
+ await server.listen();browser=await chromium.launch({headless:true});
+ const page=await browser.newPage({viewport:{width:1536,height:1024}});const errors=[],ai=[];
+ page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(r.url().includes('/api/ai/'))ai.push(r.url());});
+ await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/courtyard.html`,{waitUntil:'networkidle'});
+ await page.waitForFunction(()=>document.querySelectorAll('.loaded').length===4,{},{timeout:120000});
+ await mkdir('.impeccable/review/courtyard',{recursive:true});
+ await page.waitForTimeout(2000);
+ await page.screenshot({path:'.impeccable/review/courtyard/desktop.png',fullPage:true});
+ await page.setViewportSize({width:390,height:844});await page.waitForTimeout(1500);
+ await page.screenshot({path:'.impeccable/review/courtyard/mobile.png',fullPage:true});
+ await page.setViewportSize({width:1536,height:1024});
+ await page.locator('button[data-view=plan]').click();await page.locator('#architecture-plan polygon[role=button]').first().focus();await page.keyboard.press('Enter');assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('data-entity-id')),'living');await page.screenshot({path:'.impeccable/review/courtyard/context.png',fullPage:true});await page.locator('#selection-request').fill('make the floor oak');await page.locator('#selection-request').press('Enter');
+ await page.locator('#review[open]').waitFor();await page.locator('#apply').click();
+ await page.waitForFunction(()=>localStorage.getItem('mopple_courtyard_studio_v1'),{},{timeout:30000});
+ assert.equal(await page.locator('#undo').isEnabled(),true);await page.locator('#undo').click();
+ await page.locator('#selection-close').click();await page.locator('button[data-view=model]').click();await page.locator('[data-floor="upper"]').click();await page.locator('[data-floor=""]').click();
+ assert.ok(await page.evaluate(()=>JSON.parse(localStorage.getItem('mopple_homes_v1')??'[]').length>0));const download=page.waitForEvent('download');await page.locator('[data-action="project"]').first().click();assert.equal((await download).suggestedFilename(),'courtyard-home.mopple');
+ await page.setViewportSize({width:390,height:844});
+ await page.waitForTimeout(1500);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ await page.screenshot({path:'.impeccable/review/courtyard/mobile.png',fullPage:true});
+ await page.locator('.editor-measurements summary').click();
+ await page.locator('#measure-category').selectOption('opening');assert.ok(await page.locator('#measure-rows tr').count()>10);
+ const csvDownload=page.waitForEvent('download');await page.locator('#measure-csv').click();assert.equal((await csvDownload).suggestedFilename(),'nopple-measurements.csv');
+ await page.locator('#measure-category').selectOption('furniture');assert.ok(await page.locator('#measure-rows tr').count()>100);
+ await page.locator('#interior-measures').check();await page.locator('#measure-rows button').first().click();
+ await page.locator('button[data-view=plan]').click();await page.locator('#target-picker').selectOption({index:1});await page.locator('#measure-category').selectOption('wall');await page.locator('#measure-rows button').first().click();assert.ok(await page.locator('#architecture-plan .plan-dimension').count()>0);
+ await page.locator('#plan-measures').uncheck();assert.equal(await page.locator('#architecture-plan .plan-dimension').count(),0);await page.locator('#plan-measures').check();
+ const planDownload=page.waitForEvent('download');await page.locator('#measure-plan').click();assert.match((await planDownload).suggestedFilename(),/nopple-measured-plan.*svg/);
+ await page.locator('#selection-close').click();await page.locator('#measure-category').selectOption('wall');await page.locator('.editor-measurements').screenshot({path:'.impeccable/review/courtyard/measurements-mobile.png'});
+ await page.setViewportSize({width:1536,height:1024});await page.locator('.design-stage').screenshot({path:'.impeccable/review/courtyard/measured-plan.png'});
+ assert.deepEqual(errors,[]);assert.deepEqual(ai,[]);console.log('Courtyard: renders, preview/apply/undo, floor controls, export, mobile, no AI requests.');
+}finally{await browser?.close();await server.close();}

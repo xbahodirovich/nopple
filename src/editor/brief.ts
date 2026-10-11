@@ -10,7 +10,7 @@ import {
   type DesignBrief,
   type BriefTopicKey,
 } from '../project/brief.ts';
-import type { MoppleProjectEngine } from '../project/engine.ts';
+import { createProject, MoppleProjectEngine } from '../project/engine.ts';
 import { errorMessage } from './ui.ts';
 
 const DRAFT_KEY = 'mopple_brief_draft';
@@ -45,6 +45,8 @@ export function createBriefDialog(engine: MoppleProjectEngine, onCreated: () => 
 
     <p class="brief-intro">Describe the home you need. Fill in the details or use the guided chat. Enter “No preference” for anything you want to leave open.</p>
 
+    <div class="brief-starters" aria-label="Starter briefs"><button type="button" class="btn btn-secondary" data-starter="compact">Compact home · 90 m²</button><button type="button" class="btn btn-secondary" data-starter="family">Family home · 220 m²</button><button type="button" class="btn btn-secondary" data-starter="courtyard">Your home · 240 m²</button></div>
+
     <div class="brief-view-tabs" role="tablist">
       <button type="button" class="brief-tab active" id="brief-tab-form" role="tab" aria-selected="true">Your requirements</button>
       <button type="button" class="brief-tab" id="brief-tab-chat" role="tab" aria-selected="false">Guided chat</button>
@@ -58,7 +60,7 @@ export function createBriefDialog(engine: MoppleProjectEngine, onCreated: () => 
         <button type="button" class="btn btn-primary" id="brief-chat-submit">Send</button>
       </div>
       <div class="brief-references-section">
-        <label for="brief-ref-input">Upload / attach image or reference notes</label>
+        <label for="brief-ref-input">Record a reference filename (files stay on your device)</label>
         <input type="file" id="brief-ref-input" accept="image/*,.pdf,.txt" class="brief-ref-file" />
         <div id="brief-ref-list" class="brief-ref-list"></div>
       </div>
@@ -129,6 +131,7 @@ export function createBriefDialog(engine: MoppleProjectEngine, onCreated: () => 
 
   let approved: DesignBrief | null = null;
   let revision = engine.revision;
+  let createNew = false;
   let trigger: HTMLElement | null = null;
   let conversation: Array<{ sender: 'assistant' | 'user'; text: string }> = [];
   let attachedRefs: string[] = [];
@@ -271,7 +274,7 @@ export function createBriefDialog(engine: MoppleProjectEngine, onCreated: () => 
     if (!file) return;
     const item = document.createElement('div');
     item.className = 'brief-ref-item';
-    item.textContent = `📎 ${file.name} (${Math.round(file.size / 1024)} KB)`;
+    item.textContent = `Reference note: ${file.name} (${Math.round(file.size / 1024)} KB)`;
     refList.appendChild(item);
     attachedRefs.push(file.name);
     appendChatMessage('user', `Attached reference: ${file.name}`);
@@ -283,6 +286,23 @@ export function createBriefDialog(engine: MoppleProjectEngine, onCreated: () => 
     updateStatusBadge();
     saveDraft();
   });
+
+  dialog.querySelectorAll<HTMLButtonElement>('[data-starter]').forEach(button => button.addEventListener('click', () => {
+    const id = button.dataset.starter;
+    const fields = {
+      request: id === 'compact' ? 'A compact 90 m² home with 2 bedrooms and 1 bathroom' : id === 'family' ? 'A two-floor 220 m² family home with 4 bedrooms and 2 bathrooms' : 'A two-floor 240 m² home with 3 bedrooms, 2 bathrooms, an office and courtyard',
+      area: id === 'compact' ? 90 : id === 'family' ? 220 : 240,
+      bedrooms: id === 'family' ? 4 : id === 'compact' ? 2 : 3,
+      bathrooms: id === 'compact' ? 1 : 2,
+      floors: id === 'compact' ? 1 : 2,
+      style: 'Warm modern', site: 'No preference', household: 'No preference',
+      spaces: id === 'courtyard' ? 'Home office and courtyard garden' : 'No preference',
+      materials: 'Natural oak and warm plaster', budget: 'No preference', lighting: 'Natural daylight', interiorViews: 'Living room, bedrooms and exterior',
+    };
+    edit();
+    for (const [name, value] of Object.entries(fields)) { const element = form.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[name="${name}"]`); if(element)element.value = String(value); }
+    attachedRefs = []; refList.replaceChildren(); saveDraft(); updateStatusBadge();
+  }));
 
   get('brief-close').addEventListener('click', () => dialog.close());
   get('brief-cancel').addEventListener('click', () => dialog.close());
@@ -348,22 +368,24 @@ export function createBriefDialog(engine: MoppleProjectEngine, onCreated: () => 
       if (engine.revision !== revision) throw new Error('The project changed. Close and reopen the brief before replacing the current design.');
 
       // Atomic commit: creates house geometry and saves verified brief with approval token
-      engine.applyOperations({
+      const target = createNew ? new MoppleProjectEngine(createProject(approved.spaces.toLowerCase().includes('courtyard') ? 'Your home' : 'My new home')) : engine;
+      target.applyOperations({
         operations: [
+          { type: 'update_design_brief', brief: approved },
           {
             type: 'create_house',
             area: approved.area,
             bedrooms: approved.bedrooms,
             bathrooms: approved.bathrooms,
             style: approved.style.slice(0, 200),
-          },
-          {
-            type: 'update_design_brief',
-            brief: approved,
+            floors: approved.floors,
+            spaces: approved.spaces,
+            household: approved.household,
           },
         ],
       });
 
+      if (createNew) engine.importProject(target.saveProject());
       clearDraft();
       dialog.close();
       onCreated();
@@ -374,12 +396,13 @@ export function createBriefDialog(engine: MoppleProjectEngine, onCreated: () => 
 
   return {
     dialog,
-    open(request?: string) {
+    open(request?: string, newHome = false) {
+      createNew = newHome;
       edit();
       revision = engine.revision;
       trigger = document.activeElement as HTMLElement | null;
 
-      const savedProject = engine.getSnapshot().metadata.designBrief;
+      const savedProject = createNew ? undefined : engine.getSnapshot().metadata.designBrief;
       const existingDraft = loadDraft();
 
       if (existingDraft && (!request || request === existingDraft.fields.request)) {

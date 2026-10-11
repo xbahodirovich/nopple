@@ -12,7 +12,7 @@ const fixture = () => parseProject(readFileSync(new URL('../../examples/modern-h
 test('brief requires all answers and rejects unsupported numeric bounds', () => {
   assert.equal(designBriefSchema.safeParse({ ...brief, spaces: ' ' }).success, false);
   assert.equal(designBriefSchema.safeParse({ ...brief, area: 0 }).success, false);
-  assert.match(conceptScope(brief).join(' '), /only creates one floor/);
+  assert.match(conceptScope(brief).join(' '), /2 floors/);
 });
 
 test('concept, complete requirements and sun survive export and atomic undo/redo', () => {

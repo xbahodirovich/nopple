@@ -29,6 +29,8 @@ export function createHouseDesign(
     style: brief.style,
     spaces,
     household,
+    materials: project.metadata.designBrief?.materials,
+    lighting: project.metadata.designBrief?.lighting,
   });
   for (const object of project.interior.objects) {
     const dimensions=DEFAULT_FURNITURE_SIZES[object.kind];

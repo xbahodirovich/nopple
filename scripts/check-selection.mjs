@@ -1,0 +1,37 @@
+import assert from 'node:assert/strict';
+import {chromium} from '@playwright/test';
+import {createServer} from 'vite';
+import {mkdir,readFile} from 'node:fs/promises';
+const fixture=JSON.parse(await readFile('examples/modern-house.mopple','utf8'));
+const server=await createServer({server:{host:'127.0.0.1',port:5179}});let browser;
+try {
+ await server.listen();browser=await chromium.launch({headless:true});
+ const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors=[],requests=[];
+ page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(r.url().includes('/api/ai/'))requests.push(r.url());});
+ await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/advanced`,{waitUntil:'networkidle'});
+ await page.locator('.layer-item[data-id="object_sofa"]').click();
+ await page.locator('#selection-request').fill('remove the bed');await page.locator('#selection-request').press('Enter');
+ assert.match(await page.locator('#selection-error').textContent(),/Select the furniture/);
+ await page.locator('#selection-request').fill('make it blue');await page.locator('#selection-request').press('Enter');
+ await page.locator('#change-review[open]').waitFor();await page.keyboard.press('Delete');
+ assert.equal(await page.locator('.layer-item[data-id="object_sofa"]').count(),1);
+ await page.locator('#change-discard').click();
+ await page.locator(`.layer-item[data-id="${fixture.building.walls[0].id}"]`).click();
+ await page.locator('#selection-request').fill('paint it white');
+ await mkdir('.impeccable/review/selection',{recursive:true});
+ await page.screenshot({path:'.impeccable/review/selection/desktop.png'});
+ await page.setViewportSize({width:390,height:844});
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ await page.screenshot({path:'.impeccable/review/selection/mobile.png'});
+ await page.locator('#selection-request').press('Enter');await page.locator('#change-review[open]').waitFor();
+ await page.keyboard.press('Delete');await page.locator('#change-discard').click();
+ await page.locator('[data-panel="layers-container"]').click();
+ await page.locator(`.layer-item[data-id="${fixture.building.rooms[0].id}"]`).click();
+ await page.locator('[data-panel="layers-container"]').click();
+ await page.locator('#selection-request').fill('change this floor to oak');await page.locator('#selection-request').press('Enter');
+ await page.locator('#change-review[open]').waitFor();await page.locator('#change-apply').click();
+ await page.waitForFunction(id=>JSON.parse(localStorage.getItem('mopple_editor_project')??'null')?.building.rooms.find(room=>room.id===id).materials.floor.startsWith('selected_finish_'),fixture.building.rooms[0].id);
+ await page.locator('#selection-close').click();assert.equal(await page.locator('.selection-editor').isVisible(),false);
+ assert.deepEqual(errors,[]);assert.deepEqual(requests,[]);
+ console.log('Contextual editor passed: selected-item isolation, wall and room previews, discard/apply, mobile prompt, dismissal, no AI calls or page errors.');
+} finally {await browser?.close();await server.close();}

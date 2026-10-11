@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import {residenceAsset} from './residence-assets.ts';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { getFabricWeave, getWoodPlankTexture } from './textures.ts';
 import type { MoppleInteriorObject, MoppleMaterial } from '../project/schema.ts';
 
 export interface FurnitureFootprint {
@@ -49,18 +52,19 @@ export function createFurnitureMesh(
 
   // Helper to resolve material
   function getMaterial(slotName: string, fallbackColor: string, roughness = 0.6, metalness = 0.1): THREE.Material {
-    const override = obj.materialOverrides?.find(o => o.slot === slotName) ?? (obj.materialId ? {materialId:obj.materialId} : undefined);
-    if (override && materialsMap.has(override.materialId)) {
-      const mat = materialsMap.get(override.materialId)!;
-      return new THREE.MeshStandardMaterial({
-        color: mat.color,
-        roughness: mat.roughness,
-        metalness: mat.metalness,
-        transparent: mat.opacity < 1,
-        opacity: mat.opacity,
-      });
-    }
-    return new THREE.MeshStandardMaterial({ color: fallbackColor, roughness, metalness });
+    const primary = ['sofa','bed','chair'].includes(obj.kind) ? 'upholstery' : ['table','cabinet','stairs'].includes(obj.kind) ? 'wood' : 'surface';
+    const override = obj.materialOverrides?.find(o => o.slot === slotName) ?? (slotName === primary && obj.materialId ? {materialId:obj.materialId} : undefined);
+    const definition = override ? materialsMap.get(override.materialId) : undefined;
+    const color = definition?.color ?? fallbackColor;
+    const fabric = slotName === 'upholstery' || slotName === 'accent';
+    const wood = slotName === 'wood';
+    return new THREE.MeshPhysicalMaterial({
+      color: wood ? '#ffffff' : color,
+      roughness: definition?.roughness ?? roughness, metalness: definition?.metalness ?? metalness,
+      opacity: definition?.opacity ?? 1, transparent: (definition?.opacity ?? 1) < 1,
+      ...(wood ? {map:getWoodPlankTexture(color, 1, 1)} : {}),
+      ...(fabric ? {bumpMap:getFabricWeave(), bumpScale:.012, sheen:.65, sheenRoughness:.85, sheenColor:new THREE.Color(color)} : {}),
+    });
   }
 
   const boxGeo = new THREE.BoxGeometry(1, 1, 1);
@@ -73,9 +77,10 @@ export function createFurnitureMesh(
     scale: [number, number, number],
     rot: [number, number, number] = [0, 0, 0]
   ): THREE.Mesh {
-    const mesh = new THREE.Mesh(geo, mat);
+    const rounded = geo === boxGeo && ['sofa','bed','chair','table','cabinet'].includes(obj.kind);
+    const mesh = new THREE.Mesh(rounded ? new RoundedBoxGeometry(...scale, 3, Math.min(.045, ...scale.map(n=>n*.18))) : geo, mat);
     mesh.position.set(...pos);
-    mesh.scale.set(...scale);
+    if (!rounded) mesh.scale.set(...scale);
     mesh.rotation.set(...rot);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -88,11 +93,37 @@ export function createFurnitureMesh(
   const woodMat = getMaterial('wood', '#826549', 0.75, 0.05);
   const darkMat = getMaterial('metal', '#282b2a', 0.5, 0.6);
   const fabricMat = getMaterial('upholstery', '#e3ddd3', 0.85, 0.0);
-  const accentMat = getMaterial('accent', '#6b8071', 0.8, 0.0);
+  const accentMat = getMaterial('accent', '#b6a68d', 0.8, 0.0);
   const whiteMat = getMaterial('surface', '#f0ede6', 0.4, 0.05);
   const glassMat = getMaterial('glass', '#a2c8c0', 0.15, 0.2);
 
-  switch (obj.kind) {
+  const detailed=residenceAsset(obj.assetId,{wood:woodMat,fabric:fabricMat,accent:accentMat,stone:whiteMat,metal:darkMat});
+  if(detailed){detailed.traverse(node=>{if(node instanceof THREE.Mesh)node.userData.parentId=obj.id;});group.add(detailed);}
+  else if (obj.assetId === 'olive_tree' || obj.assetId === 'garden_shrub') {
+    const tree = obj.assetId === 'olive_tree';
+    const bark = new THREE.MeshStandardMaterial({color:'#73644c',roughness:1});
+    const leaves = ['#46563b','#67704b','#7c8157'].map(color=>new THREE.MeshStandardMaterial({color,roughness:.9,side:THREE.DoubleSide}));
+    const leaf = new THREE.SphereGeometry(1,5,3);
+    const height=tree?3.2:.8;
+    const foliage:THREE.Matrix4[][]=[[],[],[]];
+    const leafPose=new THREE.Object3D();
+    addPart(cylGeo,bark,[0,height*.36,0],[.085,height*.72,.085],[.07,0,.08]);
+    for(let b=0;b<(tree?9:5);b++) {
+      const angle=b*2.399,r=tree?.52:.2,by=height*(.52+(b%3)*.12);
+      addPart(cylGeo,bark,[Math.cos(angle)*r*.45,by-.16,Math.sin(angle)*r*.45],[.025,tree?.9:.3,.025],[Math.sin(angle)*.75,0,-Math.cos(angle)*.75]);
+      for(let i=0;i<(tree?85:35);i++) {
+        const a=i*2.399+b,rad=Math.sqrt((i+.5)/(tree?85:35))*(tree?.61:.3);
+        leafPose.position.set(Math.cos(angle)*r+Math.cos(a)*rad,by+Math.sin(i*1.73)*rad*.65,Math.sin(angle)*r+Math.sin(a)*rad);
+        leafPose.scale.set(.075,.025,.033);leafPose.rotation.set(Math.sin(i),a,.3);leafPose.updateMatrix();foliage[(i+b)%3].push(leafPose.matrix.clone());
+      }
+    }
+    foliage.forEach((poses,i)=>{const mesh=new THREE.InstancedMesh(leaf,leaves[i],poses.length);poses.forEach((pose,j)=>mesh.setMatrixAt(j,pose));mesh.castShadow=true;mesh.receiveShadow=true;mesh.userData.parentId=obj.id;group.add(mesh);});
+  } else if(obj.assetId === 'round_coffee_table') {
+    addPart(cylGeo,woodMat,[0,.34,0],[1,.09,1]);
+    addPart(cylGeo,woodMat,[0,.16,0],[.55,.32,.55]);
+    addPart(cylGeo,whiteMat,[-.17,.4,0],[.22,.03,.22]);
+    addPart(cylGeo,darkMat,[.19,.44,.1],[.12,.12,.12]);
+  } else switch (obj.kind) {
     case 'sofa': {
       // Base platform
       addPart(boxGeo, darkMat, [0, 0.08, 0], [2.2, 0.16, 0.95]);
@@ -100,13 +131,14 @@ export function createFurnitureMesh(
       addPart(boxGeo, fabricMat, [-0.52, 0.28, 0.06], [1.02, 0.26, 0.8]);
       addPart(boxGeo, fabricMat, [0.52, 0.28, 0.06], [1.02, 0.26, 0.8]);
       // Backrest
-      addPart(boxGeo, fabricMat, [0, 0.54, -0.36], [2.2, 0.45, 0.22]);
+      addPart(boxGeo, fabricMat, [-.52, 0.55, -0.33], [1.02, 0.45, 0.26], [-.12,0,0]);
+      addPart(boxGeo, fabricMat, [.52, 0.55, -0.33], [1.02, 0.45, 0.26], [-.12,0,0]);
       // Armrests
       addPart(boxGeo, fabricMat, [-1.02, 0.42, 0], [0.18, 0.38, 0.95]);
       addPart(boxGeo, fabricMat, [1.02, 0.42, 0], [0.18, 0.38, 0.95]);
       // Throw pillows
-      addPart(boxGeo, accentMat, [-0.85, 0.46, -0.2], [0.15, 0.28, 0.28], [0, 0.2, 0.2]);
-      addPart(boxGeo, accentMat, [0.85, 0.46, -0.2], [0.15, 0.28, 0.28], [0, -0.2, -0.2]);
+      addPart(boxGeo, accentMat, [-0.78, 0.5, -0.12], [.38, .38, .14], [-.15, .1, .2]);
+      addPart(boxGeo, accentMat, [0.78, 0.5, -0.12], [.38, .38, .14], [-.15, -.1, -.2]);
       break;
     }
 
@@ -197,14 +229,22 @@ export function createFurnitureMesh(
     }
 
     case 'decoration': {
+      if (obj.assetId.includes('rug')) {
+        const rug = getMaterial('surface','#c6b8a2',1,0) as THREE.MeshPhysicalMaterial;
+        rug.bumpMap=getFabricWeave();rug.bumpScale=.018;rug.sheen=.5;
+        addPart(boxGeo, rug, [0,.006,0], [2.7,.012,2.2]);
+        break;
+      }
       // Planter pot
       addPart(cylGeo, whiteMat, [0, 0.22, 0], [0.44, 0.44, 0.44]);
-      // Plant foliage spheres
-      const plantMat = new THREE.MeshStandardMaterial({ color: '#3d6342', roughness: 0.8 });
-      const sphereGeo = new THREE.SphereGeometry(0.24, 12, 12);
-      addPart(sphereGeo, plantMat, [0, 0.52, 0], [1, 1, 1]);
-      addPart(sphereGeo, plantMat, [-0.12, 0.66, 0.08], [0.8, 0.8, 0.8]);
-      addPart(sphereGeo, plantMat, [0.14, 0.62, -0.06], [0.85, 0.85, 0.85]);
+      const leafGeo = new THREE.SphereGeometry(1, 12, 8);
+      const leafMats = ['#31533b','#47774c','#668550'].map(color=>new THREE.MeshStandardMaterial({color,roughness:.65}));
+      for (let i=0;i<14;i++) {
+        const angle = i*2.399, radius = .12+(i%3)*.025;
+        const height = .45+i*.025;
+        addPart(cylGeo, leafMats[0], [Math.cos(angle)*radius*.4,height*.7,Math.sin(angle)*radius*.4], [.012,height*.8,.012], [.12*Math.sin(angle),0,.12*Math.cos(angle)]);
+        addPart(leafGeo, leafMats[i%3], [Math.cos(angle)*radius,height,Math.sin(angle)*radius], [.065,.18,.025], [.5*Math.sin(angle),angle,.5*Math.cos(angle)]);
+      }
       break;
     }
 
@@ -229,6 +269,26 @@ export function createFurnitureMesh(
     }
 
     case 'fixture': {
+      if(obj.assetId==='toilet') {
+        const ceramic=getMaterial('surface','#f6f4ee',.22,0) as THREE.MeshPhysicalMaterial;ceramic.clearcoat=.5;
+        addPart(new THREE.SphereGeometry(1,24,16),ceramic,[0,.36,.06],[.21,.18,.3]);
+        addPart(cylGeo,ceramic,[0,.15,.02],[.28,.3,.3]);
+        addPart(boxGeo,ceramic,[0,.57,-.19],[.36,.38,.16]);
+        addPart(new THREE.TorusGeometry(.15,.023,12,32),whiteMat,[0,.48,.08],[1,1.45,1],[-Math.PI/2,0,0]);
+        addPart(cylGeo,darkMat,[0,.775,-.19],[.025,.007,.025]);
+        break;
+      }
+      if(obj.assetId==='shower_enclosure') {
+        const glazing=new THREE.MeshPhysicalMaterial({color:'#d7e6df',transparent:true,opacity:.18,depthWrite:false,roughness:.08,metalness:0,clearcoat:1});
+        const tray=getMaterial('surface','#dedbd3',.7,0);
+        addPart(boxGeo,tray,[0,.035,0],[1,.07,1]);
+        const pane=addPart(boxGeo,glazing,[0,1,.46],[.96,1.95,.008]);pane.castShadow=false;
+        addPart(boxGeo,darkMat,[.46,1,.46],[.018,1.95,.02]);
+        addPart(boxGeo,darkMat,[-.46,1,.46],[.018,1.95,.02]);
+        addPart(cylGeo,darkMat,[0,1.2,-.44],[.025,1.25,.025]);
+        addPart(cylGeo,darkMat,[0,1.85,-.26],[.22,.025,.22]);
+        break;
+      }
       // Bathroom vanity unit with washbasin, mirror & tap
       const vanityMat = getMaterial('stone', '#dcd8d0', 0.4, 0.1);
       const basinMat = getMaterial('ceramic', '#ffffff', 0.2, 0.0);
@@ -249,12 +309,12 @@ export function createFurnitureMesh(
   }
 
   // Apply object transform
-  group.position.set(obj.position.x, obj.position.y, obj.position.z);
-  group.rotation.set(obj.rotation.x, obj.rotation.y, obj.rotation.z);
   if (obj.size) {
     const bounds=new THREE.Box3().setFromObject(group).getSize(new THREE.Vector3());
     group.scale.set(obj.size.x/Math.max(bounds.x,.001)*obj.scale.x,obj.size.y/Math.max(bounds.y,.001)*obj.scale.y,obj.size.z/Math.max(bounds.z,.001)*obj.scale.z);
   } else group.scale.set(obj.scale.x, obj.scale.y, obj.scale.z);
+  group.position.set(obj.position.x, obj.position.y, obj.position.z);
+  group.rotation.set(obj.rotation.x, obj.rotation.y, obj.rotation.z);
 
   return group;
 }

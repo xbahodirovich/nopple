@@ -1,72 +1,12 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#000000" />
-    <meta name="description" content="Meet Mopple. A new way to bring your home to life with AI-powered architecture, interior design, and 3D visualization." />
-    <link rel="icon" type="image/png" href="/mopple-icon.png" />
-    <meta property="og:title" content="Mopple | Imagine your home"><meta property="og:description" content="Describe a home in English, Russian or Uzbek. Explore a 2D plan and 3D concept, edit, save and share."><meta property="og:type" content="website"><meta property="og:image" content="/mopple-logo.png"><meta name="twitter:card" content="summary_large_image"><title>Mopple | A home, imagined by you.</title>
-  </head>
-  <body>
-    <a class="skip-link" href="#main">Skip to content</a>
-    <header class="header wrap">
-      <a class="wordmark" href="#" aria-label="Mopple home"><img src="/mopple-logo.png" alt="Mopple" width="1536" height="1024" /></a>
-      <nav aria-label="Main navigation">
-        <a href="#possibilities">The possibilities</a>
-        <a href="/editor.html">Open Editor <span aria-hidden="true">↗</span></a>
-      </nav>
-    </header>
-    <main id="main">
-      <div class="hero-story" id="hero-story">
-      <section class="hero wrap" aria-labelledby="hero-title">
-        <div class="hero-copy">
-          <h1 id="hero-title">A home,<br />imagined<br /> by <span>you.</span></h1>
-          <p>Describe your home. Explore the plan and 3D view, then make it yours.</p>
-          <a class="button" href="/editor.html">Design your first home <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg></a>
-
-        </div>
-        <div class="hero-visual" id="demo">
-          <div class="scene-heading"><span>One home. Every perspective.</span></div>
-          <div class="scene-viewport" id="scene-viewport" role="img" aria-label="Demonstration of the same modern home transitioning from a 3D exterior to a furnished interior and architectural floor plan">
-            <div id="fallback" class="fallback"><noscript><p>Imagine an 80 m² home: living room, kitchen, bedroom and bathroom. Open the editor with JavaScript enabled to explore the plan and 3D scene.</p></noscript></div>
-            <span class="loading" id="loading" role="status">Preparing your perspective…</span>
-          </div>
-          <div class="scene-caption"><span id="stage-description">See the whole picture.</span><span class="sample-label">Illustrative home · 80 m²</span></div>
-          <div class="scene-controls">
-            <div class="stage-buttons" role="group" aria-label="Choose a house view">
-              <button class="stage-button" data-stage="0" aria-pressed="true"><span class="stage-number">01</span><span>3D home</span><span class="stage-progress"></span></button>
-              <button class="stage-button" data-stage="1" aria-pressed="false"><span class="stage-number">02</span><span>Interior</span><span class="stage-progress"></span></button>
-              <button class="stage-button" data-stage="2" aria-pressed="false"><span class="stage-number">03</span><span>Architecture</span><span class="stage-progress"></span></button>
-            </div>
-            <span class="scroll-hint" id="scroll-hint">Scroll to explore <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16m-5-5 5 5 5-5" /></svg></span>
-          </div>
-        </div>
-        <a class="scroll-link" href="#possibilities"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16m-5-5 5 5 5-5" /></svg> Scroll to explore your home</a>
-      </section>
-      </div>
-      <section class="possibilities wrap" id="possibilities" aria-labelledby="possibilities-title">
-        <div><h2 id="possibilities-title">Every detail.<br />One vision.</h2><p class="section-intro">A home is more than a floor plan.<br />It’s how everything comes together.</p></div>
-        <div class="capabilities">
-          <a href="#demo" data-view="2"><div><h3>Give your ideas structure.</h3><p>Shape the layout. Connect the rooms. Imagine a home that fits the way you live.</p><span class="text-link">Architecture design <span aria-hidden="true">↗</span></span></div></a>
-          <a href="#demo" data-view="1"><div><h3>Make it feel like you.</h3><p>Explore materials, furniture, and the little details that make a space your own.</p><span class="text-link">Interior design <span aria-hidden="true">↗</span></span></div></a>
-          <a href="#demo" data-view="0"><div><h3>See it all come to life.</h3><p>Experience your home in 3D. See how every decision belongs to the bigger picture.</p><span class="text-link">3D visualization <span aria-hidden="true">↗</span></span></div></a>
-        </div>
-      </section>
-      <section class="example-section wrap" aria-labelledby="example-title">
-        <h2 id="example-title">From a sentence<br>to a home.</h2>
-        <p class="section-intro">For homeowners and renters exploring layouts before a move or renovation.</p>
-        <div class="example-comparison"><div class="example-request"><h3>Before</h3><blockquote>“Create a 120 sqm home with 2 bedrooms and 1 bathroom.”</blockquote></div><div class="example-result"><h3>After</h3><p>A furnished concept with two bedrooms, a bathroom, kitchen, living room and hallway. Review the requirements, then edit the plan in 2D and 3D.</p><a class="text-link" href="/editor.html">Try your own home <span aria-hidden="true">↗</span></a></div></div>
-        <p class="example-note">Concept plans help you explore ideas. Review building work with a qualified professional.</p>
-      </section>
-      <section class="possibilities pro-section wrap" aria-labelledby="pro-title"><div><h2 id="pro-title">Get updates<br>on Mopple Pro.</h2><p>Leave your email for news about future Pro tools.</p></div><form id="waitlist"><label for="waitlist-email">Email address</label><input id="waitlist-email" type="email" name="email" required autocomplete="email" maxlength="254"><button class="button" type="submit">Join waitlist</button><p id="waitlist-status" role="status"></p><noscript>The waitlist needs JavaScript. You can still explore this page and open the editor.</noscript></form></section>
-      <section class="start wrap" id="start" aria-labelledby="start-title">
-        <h2 id="start-title">Your next chapter.<br /><span>Your own space.</span></h2>
-        <div class="start-copy"><p>Start with your own layout.</p><p>Review your home requirements, generate a concept, and adjust it in the editor. Save, share or export when you’re ready.</p><a class="button" href="#demo" data-view="2">Explore the demonstration <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg></a><a class="button button-secondary" href="/editor.html">Open Studio <span aria-hidden="true">↗</span></a></div>
-      </section>
-    </main>
-    <footer class="wrap footer"><a class="wordmark" href="#" aria-label="Mopple home"><img src="/mopple-logo.png" alt="Mopple" width="1536" height="1024" /></a><span>A home, imagined by you.</span><span>© <span id="year">2026</span> Mopple</span></footer>
-    <noscript><p class="noscript">Mopple brings architecture, interior design, and 3D together. Enable JavaScript to explore the demonstration house.</p></noscript>
-    <script type="module" src="/src/main.ts"></script>
-  <script type="module" src="/src/alpha/waitlist.ts"></script></body>
-</html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#000000"><meta name="description" content="A home you can shape. Explore a furnished 3D house, inspect the floor plan, and change the details with Nopple."><link rel="icon" href="/nopple-icon.png"><meta property="og:title" content="Nopple — Your space. Your say."><meta property="og:description" content="Explore a home before it exists. Plans, interiors and an editable 3D courtyard."><meta property="og:type" content="website"><meta property="og:image" content="/assets/nopple-atmosphere.png"><title>Nopple — Your space. Your say.</title></head>
+<body><a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header"><a class="brand" href="/" aria-label="Nopple home">nopple<span class="brand-dot" aria-hidden="true"></span></a><nav aria-label="Main navigation"><a href="#how-it-works">How it works</a><a href="/homes">My homes</a><a class="nav-cta" href="/editor">Open Editor <span aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></a></nav></header>
+<main id="main"><section class="opening" aria-labelledby="hero-title"><div class="hero-orbit" aria-hidden="true"><img src="/nopple-icon.png" alt=""></div><div class="opening-copy"><h1 id="hero-title">Your space.<br><span>Your say.</span></h1><p>A home shouldn’t start with someone else’s idea of you. Step into the Editor, choose the details, and make room for your life.</p><a class="start-button" href="/editor">Make yourself at home <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 12h16m-6-6 6 6-6 6"/></svg></a><div class="opening-note"><span class="note-line"></span>Start with a furnished courtyard home.<br>No account needed to explore.</div></div>
+<figure class="inspiration-visual"><div class="inspiration-frame"><img src="/assets/nopple-detail.png" alt="Sunlight across a limestone staircase and sculptural plaster wall" fetchpriority="high"></div><figcaption><span>Space starts with a feeling.</span><a href="/editor">Explore your own in Editor <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></a><small>AI-generated architectural inspiration</small></figcaption></figure>
+<div class="opening-bottom"><span>Architecture. Interiors. A place that’s yours.</span><a href="#how-it-works">Take a closer look <svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v16m-6-6 6 6 6-6"/></svg></a></div></section>
+<section class="method" id="how-it-works"><div class="method-heading"><h2>Big ideas.<br>Small, satisfying<br><span>decisions.</span></h2><p>You don’t have to imagine everything at once. Start with one corner and work your way home.</p></div><div class="method-steps"><article><span class="method-symbol" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v16M4 12h16"/></svg></span><div><h3>Pick your place.</h3><p>A room. A wall. That sofa in the corner. Select it in the architectural plan or the furnished 3D view.</p></div></article><article><span class="method-symbol" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4v12h14m-5-5 5 5-5 5"/></svg></span><div><h3>Say what should change.</h3><p>Try “make this floor oak” or “move this chair left.” A focused prompt keeps the change tied to your selection.</p></div></article><article><span class="method-symbol" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 12 5 5L20 6"/></svg></span><div><h3>See it before you keep it.</h3><p>Review the proposed change, apply it, or keep your current design. Undo is always close by.</p></div></article><a class="text-action" href="/editor">Try a change in Editor <span aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></a></div></section>
+<section class="perspectives"><div class="perspective-copy"><h2>Same home.<br>A whole new<br>point of view.</h2><p>Read the measured plan. Get closer to the furniture. Compare a warmer finish. Keep every view connected to the design you’re working on.</p><a class="start-button dark-button" href="/editor?view=plan">Open the architectural plan <span aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></a></div><div class="perspective-board"><span class="board-title">Your next move starts here.</span><a href="/editor?view=plan"><strong>Architecture</strong><span aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></a><a href="/editor?view=model"><strong>Interiors & 3D</strong><span aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></a><a href="/editor#compare-title"><strong>Materials & light</strong><span aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></a></div></section>
+<section class="closing"><h2>There’s a home<br>in your head.<br><span>Let’s meet it.</span></h2><div><p>Start exploring today. Your draft stays on this device, ready for the next idea.</p><a class="start-button" href="/editor">Open Editor <span aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></a><small>Concept design · local editing available now</small></div></section>
+</main><footer class="site-footer"><div><a class="brand" href="/">nopple<span class="brand-dot" aria-hidden="true"></span></a><p>A little more you, in every room.</p><span>© <span id="year">2026</span> Nopple</span></div><form id="waitlist"><h2>Keep a little room for what’s next.</h2><label for="waitlist-email">Get updates about Nopple Pro</label><div><input id="waitlist-email" name="email" type="email" required autocomplete="email" maxlength="254" placeholder="Your email address"><button type="submit" aria-label="Join the waitlist"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></button></div><p id="waitlist-status" role="status"></p></form></footer>
+<script type="module" src="/src/landing.ts"></script><script type="module" src="/src/alpha/waitlist.ts"></script></body></html>

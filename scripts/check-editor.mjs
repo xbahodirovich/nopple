@@ -17,7 +17,7 @@ try {
     const draw = WebGL2RenderingContext.prototype.drawElements;
     WebGL2RenderingContext.prototype.drawElements = function (...args) { window.editorDraws++; return draw.apply(this, args); };
   });
-  await page.goto(`http://127.0.0.1:${port}/editor.html`, { waitUntil: 'networkidle' });
+  await page.goto(`http://127.0.0.1:${port}/advanced`, { waitUntil: 'networkidle' });
   assert.equal(await page.locator('canvas').count(), 2);
   assert.equal(await page.locator('.layer-item[data-type="room"]').count(), 4);
   assert.equal(await page.evaluate(async () => (await fetch('/api/ai/operations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status), 401);
@@ -41,6 +41,8 @@ try {
   async function prompt(text) {
     await page.locator('#ai-prompt-input').fill(text);
     await page.locator('#btn-ai-submit').click();
+    await page.locator('#change-review[open]').waitFor();
+    await page.locator('#change-apply').click();
     await page.locator('#ai-status.success').waitFor();
   }
   await prompt('move the sofa 1m left');
@@ -64,7 +66,7 @@ try {
   await page.locator('#brief-confirm').check();
   await page.locator('#brief-next').click();
   await page.locator('.brief-dialog').waitFor({ state: 'hidden' });
-  assert.equal(await page.locator('.layer-item[data-type="room"]').count(), 9);
+  assert.equal(await page.locator('.layer-item[data-type="room"]').count(), 11);
   // pagehide must flush the latest design before the debounce expires.
   await page.evaluate(() => dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('mopple_editor_project')));
@@ -77,7 +79,7 @@ try {
   assert.equal(plan.interiorJobs[0].status, 'not_implemented');
   assert.equal(plan.brief.spaces, saved.metadata.designBrief.spaces);
   await page.reload({ waitUntil: 'networkidle' });
-  assert.equal(await page.locator('.layer-item[data-type="room"]').count(), 9);
+  assert.equal(await page.locator('.layer-item[data-type="room"]').count(), 11);
 
   assert.equal(await page.locator('#btn-geo, #modal-geo, #geo-map-canvas').count(), 0);
   await page.locator('#btn-solar').click();
@@ -125,19 +127,15 @@ try {
   assert.equal(await page.locator('#layers-container img, #properties-container img').count(), 0);
   await page.keyboard.press('Escape');
 
-  // Provider failures are visible and fall back to the supported offline edit.
-  await page.locator('#btn-apikey').click();
-  await page.locator('#apikey-input').fill('nvapi-browser-test');
-  await page.locator('#btn-save-apikey').click();
-  await page.route('**/api/ai/operations', route => route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'Invalid API key. Your design is unchanged.' }) }));
+  // Local requests preview first and never contact an AI provider.
+  let aiRequests = 0;
+  page.on('request', request => { if(request.url().includes('/api/ai/'))aiRequests++; });
   await page.locator('#ai-prompt-input').fill('remove the sofa'); await page.locator('#btn-ai-submit').click();
-  await page.locator('#ai-status.success').waitFor();
-  assert.match(await page.locator('#ai-status').textContent(), /Invalid API key/);
-  assert.equal(await page.locator('#ai-prompt-input').inputValue(), '');
+  await page.locator('#change-review[open]').waitFor();
+  assert.equal(await page.locator('.layer-item[data-id="object_sofa"]').count(), 1);
+  await page.locator('#change-apply').click();
   assert.equal(await page.locator('.layer-item[data-id="object_sofa"]').count(), 0);
-  assert.equal(await page.evaluate(() => localStorage.getItem('mopple_nim_api_key')), null);
-  await page.unroute('**/api/ai/operations');
-  await page.locator('#btn-apikey').click(); await page.locator('#apikey-input').fill(''); await page.locator('#btn-save-apikey').click();
+  assert.equal(aiRequests, 0);
 
   await page.locator('input[type=file][accept*=".mopple"]').setInputFiles({ name: 'modern-house.mopple', mimeType: 'application/json', buffer: Buffer.from(await readFile('examples/modern-house.mopple', 'utf8')) });
   await page.locator('#hud-reset').click();
@@ -169,9 +167,9 @@ try {
   await page.screenshot({ path: '.impeccable/review/brief-mobile.png' });
   assert.ok(await page.locator('.brief-dialog').evaluate(el => el.scrollWidth <= el.clientWidth));
   await page.keyboard.press('Escape');
-  await page.locator('#btn-solar').click();
+  await page.locator('#hud-solar-toggle').click();
   await page.screenshot({ path: '.impeccable/review/sun-mobile.png' });
   assert.ok(await page.locator('#solar-study-panel').evaluate(el => el.scrollWidth <= el.clientWidth));
   assert.deepEqual(errors, []);
-  console.log('Editor regression checks passed: scale, undo, house generation, autosave, safe imports, API errors, idle rendering, mobile panels.');
+  console.log('Editor regression checks passed: scale, undo, reviewed generation, autosave, safe imports, local change previews, idle rendering, mobile panels.');
 } finally { await browser?.close(); await server.close(); }

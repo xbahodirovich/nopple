@@ -56,11 +56,11 @@ export async function executeAiPrompt(prompt: string, engine: MoppleProjectEngin
         });
       } catch (error) {
         if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) throw new Error('AI timed out. Your design is unchanged. Try a smaller request.');
-        throw new Error('Cannot reach the AI service. Check your connection and run Mopple with its server. Your design is unchanged.');
+        throw new Error('Cannot reach the AI service. Check your connection and run Nopple with its server. Your design is unchanged.');
       }
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok) {
-        const detail = body && typeof body === 'object' && 'error' in body && typeof body.error === 'string' ? body.error : 'AI endpoint unavailable. Start Mopple with npm run dev or npm start.';
+        const detail = body && typeof body === 'object' && 'error' in body && typeof body.error === 'string' ? body.error : 'AI endpoint unavailable. Start Nopple with npm run dev or npm start.';
         throw new Error(detail);
       }
       operations = sanitizeOperations(body, project); hosted = true;

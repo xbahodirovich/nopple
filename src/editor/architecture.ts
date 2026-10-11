@@ -48,9 +48,9 @@ export class ArchitectureOverlay {
 export function createArchitectureControls(container: HTMLElement, engine: MoppleProjectEngine, canvas: Canvas3D, onSelect: (entity: SelectedEntity) => void) {
   const panel = document.createElement('div'); panel.className = 'architecture-controls';
   panel.innerHTML = `<div class="architecture-toolbar">
-    <label>3D view<select id="architecture-view" aria-label="3D architectural view"><option value="isometric">Whole house</option><option value="cutaway">Cutaway</option><option value="top">Top plan</option>${exteriorViews.map(v => `<option value="${v}">${exteriorViewNames[v]}</option>`).join('')}</select></label>
-    <label>Level<select id="architecture-floor" aria-label="3D floor"><option value="">All floors</option></select></label>
-    <label class="dimension-toggle"><input id="architecture-dimensions" type="checkbox">Dimensions</label>
+    <label class="scene-control"><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10H3Z M9 20v-7h6v7"/></svg>3D view</span><select id="architecture-view" aria-label="3D architectural view"><option value="isometric">Whole house</option><option value="cutaway">Cutaway</option><option value="top">Top plan</option>${exteriorViews.map(v => `<option value="${v}">${exteriorViewNames[v]}</option>`).join('')}</select></label>
+    <label class="scene-control"><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 10 5-10 5L2 8Z M2 12l10 5 10-5 M2 16l10 5 10-5"/></svg>Level</span><select id="architecture-floor" aria-label="3D floor"><option value="">All floors</option></select></label>
+    <label class="dimension-toggle" title="Show model dimensions"><input id="architecture-dimensions" type="checkbox"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v10H3Z M7 7v5 M11 7v3 M15 7v5 M19 7v3"/></svg><span>Dimensions</span></label>
   </div><details class="measurement-schedule"><summary>Measurement schedule <span id="measurement-count"></span></summary>
     <p>Model dimensions in meters. Rooms use wall centerlines; overall extents use outer wall faces. Front is +Z. Select a row to inspect in 3D.</p>
     <div class="measurement-actions"><label>Filter<input id="measurement-filter" type="search" placeholder="Room, wall or opening"></label><button type="button" class="btn btn-secondary btn-sm" id="measurement-export">Export CSV</button></div>

@@ -115,7 +115,7 @@ export class MoppleProjectEngine {
   constructor(project: unknown = createProject(), options: EngineOptions = {}) {
     this.#project = validateProject(project);
     this.#now = options.now ?? nowISO;
-    this.#onError = options.onSubscriberError ?? (error => console.error('Mopple subscriber failed', error));
+    this.#onError = options.onSubscriberError ?? (error => console.error('Nopple subscriber failed', error));
   }
   getSnapshot(): MoppleProject { return structuredClone(this.#project); }
   get revision(): number { return this.#revision; }

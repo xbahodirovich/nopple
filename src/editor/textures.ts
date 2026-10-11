@@ -2,6 +2,23 @@ import * as THREE from 'three';
 
 const textureCache = new Map<string, THREE.CanvasTexture>();
 
+/** Neutral, repeatable linen weave; used as a bump map so fabric color stays editable. */
+export function getFabricWeave(): THREE.Texture {
+  if (typeof document === 'undefined') return createFallbackTexture(10, 10);
+  const cached = textureCache.get('linen_weave'); if (cached) return cached;
+  const canvas = document.createElement('canvas'); canvas.width = canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#929292'; ctx.fillRect(0, 0, 128, 128);
+  for (let y = 0; y < 128; y += 4) for (let x = 0; x < 128; x += 4) {
+    const horizontal = ((x + y) / 4) % 2 === 0;
+    ctx.fillStyle = '#bababa'; ctx.fillRect(x, y, horizontal ? 4 : 2, horizontal ? 2 : 4);
+    ctx.fillStyle = '#727272'; ctx.fillRect(x + 2, y + 2, 2, 2);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping; texture.repeat.set(12, 12);
+  textureCache.set('linen_weave', texture); return texture;
+}
+
 function createFallbackTexture(repeatU = 1, repeatV = 1): THREE.CanvasTexture {
   const tex = new THREE.DataTexture(new Uint8Array([200, 200, 200, 255]), 1, 1) as unknown as THREE.CanvasTexture;
   tex.wrapS = THREE.RepeatWrapping;
@@ -65,6 +82,7 @@ export function getWoodPlankTexture(baseColorHex = '#c4a67e', repeatU = 3, repea
   }
 
   const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
   texture.repeat.set(repeatU, repeatV);
@@ -208,23 +226,27 @@ export function getLawnTexture(repeat = 8): THREE.CanvasTexture {
   const cacheKey = `lawn_${repeat}`;
   if (textureCache.has(cacheKey)) return textureCache.get(cacheKey)!;
 
-  const size = 256;
+  const size = 512;
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d')!;
 
-  ctx.fillStyle = '#223326';
+  ctx.fillStyle = '#455a40';
   ctx.fillRect(0, 0, size, size);
 
   // Multi-tone grass blades
-  const greens = ['#2c4432', '#36533d', '#1d2b20', '#3e5c46'];
-  for (let i = 0; i < 4000; i++) {
-    ctx.fillStyle = greens[i % greens.length];
-    ctx.fillRect(Math.random() * size, Math.random() * size, 2, 2.5);
+  const greens = ['#4b6145', '#526749', '#3e533b', '#586d4e'];
+  let seed=417; const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+  ctx.lineWidth=.65; ctx.globalAlpha=.45;
+  for (let i = 0; i < 18000; i++) {
+    const x=random()*size,y=random()*size;
+    ctx.strokeStyle = greens[i % greens.length];
+    ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+(random()-.5)*2,y-1-random()*3);ctx.stroke();
   }
 
   const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
   texture.repeat.set(repeat, repeat);

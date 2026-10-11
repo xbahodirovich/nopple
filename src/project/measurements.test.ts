@@ -49,3 +49,10 @@ test('exterior cameras frame translated tall houses in portrait and landscape', 
     }
   }
 });
+
+test('furniture dimensions follow physical size, scale and rotation without changing the model',()=>{
+ const p=fixture(),object=p.interior.objects[0];object.size={x:2,y:.8,z:1};object.scale={x:1.5,y:2,z:.5};object.rotation.y=Math.PI/3;
+ const before=JSON.stringify(p),rows=architectureMeasurements(p).filter(r=>r.entityId===object.id);
+ for(const [axis,expected] of [['width',3],['height',1.6],['depth',.5]] as const){const row=rows.find(r=>r.id===`${object.id}-${axis}`)!;assert.equal(row.value,expected);assert.ok(Math.abs(Math.hypot(row.end.x-row.start.x,row.end.y-row.start.y,row.end.z-row.start.z)-expected)<1e-9);}
+ assert.equal(JSON.stringify(p),before);
+});
