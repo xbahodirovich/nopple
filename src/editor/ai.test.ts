@@ -160,32 +160,57 @@ test('house creation builds exact requested room counts and area, and supports u
   e.undo(); assert.deepEqual(e.getSnapshot(), p);
 });
 
-test('API failure uses the offline engine; stale responses never overwrite new work', async () => {
-  const { executeAiPrompt, setStoredApiKey } = await import('./ai.ts');
-  const original = globalThis.fetch; const e = new MoppleProjectEngine(parseProject(example));
-  setStoredApiKey('nvapi-test');
+test('hosted requests send only the selection context and never a browser key', async () => {
+  const { requestAiOperations } = await import('./ai.ts');
+  const p = parseProject(example);
+  const original = globalThis.fetch;
+  let captured: {
+    url: string;
+    headers: Record<string, string>;
+    body: { selectedId: string; project: { building: { rooms: { id: string }[] }; interior: { objects: { id: string }[] }; lighting: unknown[] } };
+  } | undefined;
   try {
-    globalThis.fetch = async () => new Response(JSON.stringify({ error: 'Invalid API key' }), { status: 401 });
-    const result = await executeAiPrompt('move the sofa left', e);
-    assert.equal(result.source, 'local_semantic');
-    assert.match(result.message, /Invalid API key/);
-    let resolveRequest: (response: Response) => void = () => {};
-    globalThis.fetch = () => new Promise(resolve => { resolveRequest = resolve; });
-    const request = executeAiPrompt('move the sofa left', e);
-    await assert.rejects(executeAiPrompt('add a bed', e), /already running/);
-    e.renameProject('New work');
-    resolveRequest(new Response(JSON.stringify({ operations: [{ type: 'remove_object', targetId: 'object_sofa' }] })));
-    await assert.rejects(request, /project changed/);
-    assert.ok(e.getSnapshot().interior.objects.some(o => o.id === 'object_sofa'));
-  } finally { globalThis.fetch = original; setStoredApiKey(''); }
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      captured = { url: String(url), headers: init?.headers as Record<string, string>, body: JSON.parse(String(init?.body)) };
+      return new Response(JSON.stringify({ operations: [{ type: 'move_object', targetId: 'object_sofa', position: { x: -3, y: 0, z: 1 } }] }));
+    }) as typeof fetch;
+    const operations = await requestAiOperations('move the sofa left', p, { type: 'object', id: 'object_sofa' });
+    assert.equal(operations.operations[0].type, 'move_object');
+    assert.equal(captured?.url, '/api/ai/operations');
+    assert.equal(captured?.headers.Authorization, undefined);
+    assert.equal(captured?.body.selectedId, 'object_sofa');
+    assert.equal(captured?.body.project.lighting.length, 0);
+    assert.equal(captured?.body.project.building.rooms.some(room => room.id === 'room_bedroom'), false);
+    assert.equal(captured?.body.project.interior.objects.some(object => object.id === 'object_table'), false);
+  } finally { globalThis.fetch = original; }
 });
 
-test('new house requests cannot bypass the reviewed brief workflow', async () => {
-  const { executeAiPrompt, isHouseRequest } = await import('./ai.ts');
-  const engine = new MoppleProjectEngine(parseProject(example));
-  const before = engine.getSnapshot();
-  await assert.rejects(executeAiPrompt('make a new house', engine), /review the house brief/);
-  assert.deepEqual(engine.getSnapshot(), before);
+test('hosted requests are single-flight and reject house or malformed operations', async () => {
+  const { requestAiOperations } = await import('./ai.ts');
+  const p = parseProject(example);
+  const original = globalThis.fetch;
+  let resolveRequest: (response: Response) => void = () => {};
+  let called = 0;
+  globalThis.fetch = (async () => {
+    called++;
+    return new Promise<Response>(resolve => { resolveRequest = resolve; });
+  }) as typeof fetch;
+  try {
+    const first = requestAiOperations('move the sofa left', p, { type: 'object', id: 'object_sofa' });
+    await assert.rejects(requestAiOperations('add a bed', p, { type: 'object', id: 'object_sofa' }), /already running/);
+    resolveRequest(new Response(JSON.stringify({ operations: [{ type: 'move_object', targetId: 'object_sofa', position: { x: -3, y: 0, z: 1 } }] })));
+    assert.equal((await first).operations.length, 1);
+    assert.equal(called, 1);
+
+    await assert.rejects(requestAiOperations('make a new house', p, { type: 'room', id: 'room_living' }), /review the house brief/);
+    globalThis.fetch = (async () => { called++; return new Response(JSON.stringify({ operations: [{ type: 'execute', code: 'bad' }] })); }) as typeof fetch;
+    await assert.rejects(requestAiOperations('move the sofa left', p, { type: 'object', id: 'object_sofa' }));
+    assert.equal(called, 2);
+  } finally { globalThis.fetch = original; }
+});
+
+test('house request detection distinguishes replacement from restyling', async () => {
+  const { isHouseRequest } = await import('./ai.ts');
   assert.equal(isHouseRequest('Design a modern\n house for a family'), true);
   assert.equal(isHouseRequest('make the house cozy'), false);
 });
