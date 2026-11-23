@@ -80,10 +80,10 @@ export function initEditor() {
   const engineBadgeText = document.getElementById('engine-badge-text') as HTMLElement | null;
 
   // Modals
-  const apiKeyModal = document.getElementById('modal-apikey') as HTMLElement;
-  const geminiModelSelect = document.getElementById('gemini-model-select') as HTMLSelectElement | null;
-  const btnSaveApiKey = document.getElementById('btn-save-apikey') as HTMLButtonElement;
-  const btnCloseApiKey = document.getElementById('btn-close-apikey') as HTMLButtonElement;
+  const aiSettingsModal = document.getElementById('modal-ai-settings') as HTMLElement;
+  const aiModelSelect = document.getElementById('ai-model-select') as HTMLSelectElement | null;
+  const btnSaveAiSettings = document.getElementById('btn-save-ai-settings') as HTMLButtonElement;
+  const btnCloseAiSettings = document.getElementById('btn-close-ai-settings') as HTMLButtonElement;
 
   // 1. Instantiate 2D & 3D Renderers
   const canvas2d = new Canvas2D(pane2D, {
@@ -122,7 +122,7 @@ export function initEditor() {
     onExport: () => handleExport(),
     onImport: () => triggerFileInput(),
     onDeleteSelected: () => handleDeleteSelected(),
-    onOpenApiKeyModal: () => openApiKeyModal(),
+    onOpenAiSettings: () => openAiSettings(),
   });
 
   // Synchronized Selection Handler
@@ -402,38 +402,38 @@ export function initEditor() {
 
   // AI Settings modal: model preference only. No key is ever entered, stored or sent from the browser.
   let modalTrigger: HTMLElement | null = null;
-  function openApiKeyModal() {
+  function openAiSettings() {
     modalTrigger = document.activeElement as HTMLElement | null;
-    if (geminiModelSelect) {
-      geminiModelSelect.value = getStoredModel();
+    if (aiModelSelect) {
+      aiModelSelect.value = getStoredModel();
     }
-    apiKeyModal.classList.add('show'); document.getElementById('editor-app')!.inert = true; (geminiModelSelect ?? btnCloseApiKey).focus();
+    aiSettingsModal.classList.add('show'); document.getElementById('editor-app')!.inert = true; (aiModelSelect ?? btnCloseAiSettings).focus();
   }
 
-  function closeApiKeyModal() {
-    apiKeyModal.classList.remove('show'); document.getElementById('editor-app')!.inert = false; modalTrigger?.focus();
+  function closeAiSettings() {
+    aiSettingsModal.classList.remove('show'); document.getElementById('editor-app')!.inert = false; modalTrigger?.focus();
   }
 
-  document.getElementById('btn-apikey')?.addEventListener('click', openApiKeyModal);
-  btnCloseApiKey.addEventListener('click', closeApiKeyModal);
-  apiKeyModal.addEventListener('click', e => {
-    if (e.target === apiKeyModal) closeApiKeyModal();
+  document.getElementById('btn-ai-settings')?.addEventListener('click', openAiSettings);
+  btnCloseAiSettings.addEventListener('click', closeAiSettings);
+  aiSettingsModal.addEventListener('click', e => {
+    if (e.target === aiSettingsModal) closeAiSettings();
   });
 
-  apiKeyModal.addEventListener('keydown', event => {
-    if (event.key === 'Escape') { event.stopPropagation(); closeApiKeyModal(); }
+  aiSettingsModal.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.stopPropagation(); closeAiSettings(); }
     if (event.key === 'Tab') {
-      const controls = [...apiKeyModal.querySelectorAll<HTMLElement>('input, select, button, a')];
+      const controls = [...aiSettingsModal.querySelectorAll<HTMLElement>('input, select, button, a')];
       const first = controls[0], last = controls.at(-1)!;
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     }
   });
-  btnSaveApiKey.addEventListener('click', () => {
-    if (geminiModelSelect) {
-      setStoredModel(geminiModelSelect.value);
+  btnSaveAiSettings.addEventListener('click', () => {
+    if (aiModelSelect) {
+      setStoredModel(aiModelSelect.value);
     }
-    closeApiKeyModal();
+    closeAiSettings();
     showStatus('AI preferences saved.', 'success');
     if (statusTimeout) clearTimeout(statusTimeout);
     statusTimeout = setTimeout(() => aiStatus.classList.remove('visible'), 4000);
@@ -654,7 +654,7 @@ export function initEditor() {
   // Global Keyboard Shortcuts
   window.addEventListener('keydown', e => {
     const target = e.target as HTMLElement;
-    if (apiKeyModal.classList.contains('show') || document.querySelector('dialog[open]')) return;
+    if (aiSettingsModal.classList.contains('show') || document.querySelector('dialog[open]')) return;
     if(e.key==='Escape' && isSolarOpen){toggleSolarPanel(false);hudSolarToggle?.focus();return;}
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
       return;

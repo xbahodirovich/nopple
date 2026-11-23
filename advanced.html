@@ -48,7 +48,7 @@
         <button class="icon-button" id="btn-export" title="Export .mopple project">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         </button>
-        <button class="icon-button" id="btn-apikey" hidden title="AI settings">
+        <button class="icon-button" id="btn-ai-settings" hidden title="AI settings">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
         </button>
       </div>
@@ -225,7 +225,7 @@
   </div>
 
   <!-- AI Settings Modal (no keys: hosted AI is configured on the server) -->
-  <div class="modal-backdrop" id="modal-apikey">
+  <div class="modal-backdrop" id="modal-ai-settings">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="ai-settings-title">
       <div class="modal-title" id="ai-settings-title">AI settings</div>
       <div class="modal-desc">
@@ -233,7 +233,7 @@
       </div>
       <div class="prop-group">
         <div class="prop-label">AI model</div>
-        <select id="gemini-model-select" class="input-select">
+        <select id="ai-model-select" class="input-select">
           <option value="z-ai/glm-5.3-flash" selected>GLM 5.3 Flash (z-ai/glm-5.3-flash) — Recommended</option>
           <option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B Instruct (meta/llama-3.3-70b-instruct)</option>
           <option value="deepseek-ai/deepseek-r1">DeepSeek R1 (deepseek-ai/deepseek-r1)</option>
@@ -241,8 +241,8 @@
         </select>
       </div>
       <div class="modal-actions">
-        <button class="btn btn-secondary" id="btn-close-apikey">Cancel</button>
-        <button class="btn btn-primary" id="btn-save-apikey">Save</button>
+        <button class="btn btn-secondary" id="btn-close-ai-settings">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-ai-settings">Save</button>
       </div>
     </div>
   </div>

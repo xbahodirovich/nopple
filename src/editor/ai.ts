@@ -5,10 +5,13 @@ import type { MoppleInteriorObject, MoppleLight, MoppleMaterial, MoppleProject, 
 import { AI_SELECTION_REQUIRED, buildAiContext, type AiSelection } from '../project/ai-context.ts';
 
 export const DEFAULT_AI_MODEL = 'z-ai/glm-5.3-flash';
-export const DEFAULT_GEMINI_MODEL = DEFAULT_AI_MODEL;
+/** Keep in sync with the server-side allowlist in server/ai.ts. */
+export const AI_MODEL_OPTIONS = ['z-ai/glm-5.3-flash', 'meta/llama-3.3-70b-instruct', 'deepseek-ai/deepseek-r1', 'qwen/qwen2.5-72b-instruct'] as const;
 export function getStoredModel(): string {
-  try { const m = localStorage.getItem('mopple_ai_model'); return m && !m.includes('gemini') ? m : DEFAULT_AI_MODEL; }
-  catch { return DEFAULT_AI_MODEL; }
+  try {
+    const m = localStorage.getItem('mopple_ai_model');
+    return m && (AI_MODEL_OPTIONS as readonly string[]).includes(m) ? m : DEFAULT_AI_MODEL;
+  } catch { return DEFAULT_AI_MODEL; }
 }
 export function setStoredModel(model: string): void {
   try { localStorage.setItem('mopple_ai_model', model.trim()); } catch { /* Optional preference. */ }
@@ -386,7 +389,6 @@ function findMentionedFurnitureKind(text: string): MoppleInteriorObject['kind'] 
 export function sanitizeOperations(raw: unknown, _project: MoppleProject): MoppleOperations {
   return validateOperations(raw);
 }
-export const sanitizeGeminiOperations = sanitizeOperations;
 
 export function normalizePrompt(prompt: string): string {
  let text = prompt.toLowerCase();
