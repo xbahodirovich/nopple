@@ -1,8 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { Readable } from 'node:stream';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { executeGeneration, handleGenerationRequest } from './generation.ts';
+import { resetAiQuota } from './quota.ts';
 import { designBriefSchema, createApprovalToken } from '../src/project/brief.ts';
 import { EventEmitter } from 'node:events';
+
+const savedFlag = process.env.AI_FALLBACK_ENABLED;
+const savedNodeEnv = process.env.NODE_ENV;
+const savedVercelEnv = process.env.VERCEL_ENV;
+test.before(() => {
+  process.env.AI_FALLBACK_ENABLED = 'true';
+  process.env.NODE_ENV = 'test';
+  delete process.env.VERCEL_ENV;
+});
+test.after(() => {
+  if (savedFlag === undefined) delete process.env.AI_FALLBACK_ENABLED; else process.env.AI_FALLBACK_ENABLED = savedFlag;
+  if (savedNodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = savedNodeEnv;
+  if (savedVercelEnv === undefined) delete process.env.VERCEL_ENV; else process.env.VERCEL_ENV = savedVercelEnv;
+});
+test.beforeEach(() => resetAiQuota());
 
 const sampleBrief = designBriefSchema.parse({
   request: 'A modern 2-floor villa with 4 bedrooms, 3 bathrooms, an office and courtyard',
@@ -79,7 +97,7 @@ test('HTTP generation endpoint handles GET status and POST generate', async () =
   class MockRequest extends EventEmitter {
     method = 'POST';
     url = '/api/ai/generate';
-    headers = { 'content-type': 'application/json' };
+    headers = { 'content-type': 'application/json', authorization: 'Bearer nvapi-test' };
     async *[Symbol.asyncIterator]() {
       yield Buffer.from(payload);
     }
@@ -117,4 +135,17 @@ test('HTTP generation endpoint handles GET status and POST generate', async () =
   await handleGenerationRequest(cancel as any, mockRes as any);
   assert.equal(responseStatus, 200);
   assert.equal(JSON.parse(responseData).job.status, 'cancelled');
+});
+
+test('HTTP generation endpoint is disabled by AI_FALLBACK_ENABLED', async () => {
+  const req = Readable.from([]) as IncomingMessage;
+  req.method = 'POST'; req.url = '/api/ai/generate'; req.headers = { 'content-type': 'application/json' };
+  let status = 0, body = '';
+  const res = { writeHead(code: number) { status = code; }, end(data?: string) { body = data ?? ''; } };
+  process.env.AI_FALLBACK_ENABLED = 'false';
+  try {
+    await handleGenerationRequest(req, res as unknown as ServerResponse);
+    assert.equal(status, 503);
+    assert.match(body, /disabled/);
+  } finally { process.env.AI_FALLBACK_ENABLED = 'true'; }
 });

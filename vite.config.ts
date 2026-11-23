@@ -8,7 +8,7 @@ import { handleGenerationRequest } from './server/generation.ts';
 
 export default defineConfig(({mode}) => {
  const env=loadEnv(mode,process.cwd(),'');
- for (const key of ['NVIDIA_API_KEY','AI_PER_IP_PER_MINUTE','AI_DAILY_CAP','UPSTASH_REDIS_REST_URL','UPSTASH_REDIS_REST_TOKEN']) if(process.env[key]===undefined && env[key]) process.env[key]=env[key];
+ for (const key of ['NVIDIA_API_KEY','AI_FALLBACK_ENABLED','AI_PER_IP_PER_MINUTE','AI_DAILY_CAP','UPSTASH_REDIS_REST_URL','UPSTASH_REDIS_REST_TOKEN']) if(process.env[key]===undefined && env[key]) process.env[key]=env[key];
  return {
   plugins: [{
     name: 'mopple-ai-service',

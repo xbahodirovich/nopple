@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
+import { aiFallbackEnabled, quotaConfigurationIssue, requestIp, resolveAuthorization, validAuthorization } from './ai-guard.ts';
+import { consumeAiQuota } from './quota.ts';
 import { designBriefSchema, verifyApprovalToken, type DesignBrief } from '../src/project/brief.ts';
 import { createProject, MoppleProjectEngine } from '../src/project/engine.ts';
 import { generateArchitecturalLayout } from '../src/project/architecture-generator.ts';
@@ -284,6 +286,10 @@ export async function handleGenerationRequest(
   };
 
   const url = new URL(req.url ?? '/', 'http://localhost');
+  if (!aiFallbackEnabled()) {
+    send(503, { error: 'Hosted AI is disabled. Set AI_FALLBACK_ENABLED=true on the server to enable it.' });
+    return;
+  }
 
   // GET: Query status of job
   if (req.method === 'GET') {
@@ -323,10 +329,21 @@ export async function handleGenerationRequest(
     return;
   }
 
+  const authorization = resolveAuthorization(req);
+  if (!validAuthorization(authorization)) {
+    send(401, { error: 'Hosted AI is not configured. Using the offline designer.' });
+    return;
+  }
+  const quotaIssue = quotaConfigurationIssue();
+  if (quotaIssue) { send(503, { error: quotaIssue }); return; }
   if (!req.headers['content-type']?.startsWith('application/json')) {
     send(415, { error: 'Expected application/json.' });
     return;
   }
+  const quotaResult = await consumeAiQuota(requestIp(req));
+  if (quotaResult === 'unavailable') { send(503, { error: 'AI limits unavailable. Using offline designer.' }); return; }
+  if (quotaResult === 'daily_limit') { send(503, { error: 'AI daily limit reached. Using offline designer.' }); return; }
+  if (quotaResult === 'ip_limit') { send(429, { error: 'AI request limit reached. Using offline designer.' }); return; }
 
   try {
     const chunks: Buffer[] = [];

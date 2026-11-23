@@ -1,4 +1,5 @@
-import { distributedQuota } from './quota.ts';
+import { consumeAiQuota } from './quota.ts';
+import { aiFallbackEnabled, quotaConfigurationIssue, requestIp, resolveAuthorization, validAuthorization } from './ai-guard.ts';
 import { isHouseRequest } from '../src/editor/ai.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
@@ -6,8 +7,6 @@ import { operationsSchema, validateOperations } from '../src/project/operations.
 import { validateProject } from '../src/project/validation.ts';
 import { MoppleProjectEngine } from '../src/project/engine.ts';
 
-const clients = new Map<string, { start: number; count: number }>();
-const quota = { day: '', count: 0 };
 const requestSchema = z.strictObject({ prompt: z.string().trim().min(1).max(4000), project: z.unknown(), selectedId: z.string().optional(), mode: z.enum(['GENERATE','EDIT']).optional(), model: z.enum(['z-ai/glm-5.3-flash', 'meta/llama-3.3-70b-instruct', 'deepseek-ai/deepseek-r1', 'qwen/qwen2.5-72b-instruct']) });
 const responseSchema = z.object({ choices: z.array(z.object({ finish_reason: z.string().nullable().optional(), message: z.object({ content: z.string().nullable() }) })).min(1) });
 const operationContract = JSON.stringify(z.toJSONSchema(operationsSchema));
@@ -24,20 +23,16 @@ export async function handleAiRequest(req: IncomingMessage, res: ServerResponse,
     try { if (new URL(origin).host !== req.headers.host) { send(403, { error: 'Cross-origin AI requests are not allowed.' }); return; } }
     catch { send(403, { error: 'Invalid request origin.' }); return; }
   }
-  const authorization = req.headers.authorization ?? (process.env.NVIDIA_API_KEY ? `Bearer ${process.env.NVIDIA_API_KEY}` : undefined);
-  if (!authorization?.startsWith('Bearer nvapi-') || authorization.length > 1024) { send(401, { error: 'Hosted AI is not configured. Using the offline designer.' }); return; }
+  if (!aiFallbackEnabled()) { send(503, { error: 'Hosted AI is disabled. Set AI_FALLBACK_ENABLED=true on the server to enable it.' }); return; }
+  const authorization = resolveAuthorization(req);
+  if (!validAuthorization(authorization)) { send(401, { error: 'Hosted AI is not configured. Using the offline designer.' }); return; }
+  const quotaIssue = quotaConfigurationIssue();
+  if (quotaIssue) { send(503, { error: quotaIssue }); return; }
   if (!req.headers['content-type']?.startsWith('application/json')) { send(415, { error: 'Expected JSON.' }); return; }
-  const ip = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() ?? req.socket?.remoteAddress ?? 'local';
-  let distributed: boolean | undefined;
-  try { distributed = await distributedQuota(ip); } catch { send(503, {error:'AI limits unavailable. Using offline designer.'}); return; }
-  if (distributed === false) { send(429,{error:'AI request limit reached. Using offline designer.'});return; }
-  const now = Date.now(), day = new Date().toISOString().slice(0,10);
-  if (quota.day !== day) { quota.day = day; quota.count = 0; clients.clear(); }
-  const bucket = clients.get(ip);
-  if ((!bucket || now - bucket.start >= 60000)) clients.set(ip, { start: now, count: 0 });
-  const current = clients.get(ip)!;
-  if (distributed === undefined && (current.count >= Number(process.env.AI_PER_IP_PER_MINUTE ?? 10) || quota.count >= Number(process.env.AI_DAILY_CAP ?? 500))) { send(429, { error: 'AI request limit reached. Using offline designer.' }); return; }
-  current.count++; quota.count++;
+  const quotaResult = await consumeAiQuota(requestIp(req));
+  if (quotaResult === 'unavailable') { send(503, { error: 'AI limits unavailable. Using offline designer.' }); return; }
+  if (quotaResult === 'daily_limit') { send(503, { error: 'AI daily limit reached. Using offline designer.' }); return; }
+  if (quotaResult === 'ip_limit') { send(429, { error: 'AI request limit reached. Using offline designer.' }); return; }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90000);
   const disconnect = () => { if (!res.writableEnded) controller.abort(); };
