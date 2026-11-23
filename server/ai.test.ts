@@ -26,8 +26,8 @@ test.after(() => {
 });
 test.beforeEach(() => resetAiQuota());
 
-async function request(response: Response, operationsPrompt = 'move the sofa left', authorization: string | null = 'Bearer nvapi-test') {
-  const req = Readable.from([Buffer.from(JSON.stringify({ prompt: operationsPrompt, model: 'z-ai/glm-5.3-flash', project }))]) as IncomingMessage;
+async function request(response: Response, operationsPrompt = 'move the sofa left', authorization: string | null = 'Bearer nvapi-test', model = 'z-ai/glm-5.3-flash') {
+  const req = Readable.from([Buffer.from(JSON.stringify({ prompt: operationsPrompt, model, project }))]) as IncomingMessage;
   req.method = 'POST'; req.headers = { 'content-type': 'application/json', ...(authorization ? { authorization } : {}) };
   let status = 0, body = ''; const res = new EventEmitter() as ServerResponse;
   res.writeHead = ((code: number) => { status = code; return res; }) as ServerResponse['writeHead'];
@@ -199,6 +199,15 @@ test('global daily cap returns 503 for every caller', async () => {
   } finally {
     if (daily === undefined) delete process.env.AI_DAILY_CAP; else process.env.AI_DAILY_CAP = daily;
   }
+});
+test('a non-allowlisted model falls back to the default and is never forwarded', async () => {
+  const result = await request(
+    answer({ operations: [{ type: 'remove_object', targetId: 'object_sofa' }] }),
+    'move sofa', 'Bearer nvapi-test', 'gemini-3.1-pro-preview',
+  );
+  assert.equal(result.status, 200);
+  assert.match(result.upstreamBody, /"model":"z-ai\/glm-5.3-flash"/);
+  assert.doesNotMatch(result.upstreamBody, /gemini/i);
 });
 test('per-IP cap returns 429 without consuming the daily cap twice', async () => {
   const perIp = process.env.AI_PER_IP_PER_MINUTE, daily = process.env.AI_DAILY_CAP;
