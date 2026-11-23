@@ -13,11 +13,15 @@ export function callerKeysAllowed(): boolean {
   return process.env.NODE_ENV !== 'production' && process.env.VERCEL_ENV === undefined;
 }
 
-/** Hosted deployments must have a quota before they can spend a server key. */
+/**
+ * Hosted mode is the safe default: server-key spending requires an enforced
+ * quota. Only an explicitly local environment opts out — VERCEL_ENV=development
+ * from `vercel dev`, or NODE_ENV=development outside Vercel. A NODE_ENV
+ * override inside a Vercel deployment cannot disable hosted enforcement.
+ */
 export function hostedAiMode(): boolean {
-  return process.env.NODE_ENV === 'production'
-    || process.env.VERCEL_ENV === 'production'
-    || process.env.VERCEL_ENV === 'preview';
+  if (process.env.VERCEL_ENV !== undefined) return process.env.VERCEL_ENV !== 'development';
+  return process.env.NODE_ENV !== 'development';
 }
 
 export function resolveAuthorization(req: IncomingMessage): string | undefined {

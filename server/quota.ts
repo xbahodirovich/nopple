@@ -4,6 +4,9 @@ export type AiQuotaResult = 'ok' | 'ip_limit' | 'daily_limit' | 'unavailable';
 
 interface Bucket { start: number; count: number }
 
+/** Upper bound on tracked per-IP buckets; protects memory from untrusted IPs. */
+export const AI_CLIENT_MAP_LIMIT = 10_000;
+
 const clients = new Map<string, Bucket>();
 const daily = { day: '', count: 0 };
 
@@ -60,6 +63,11 @@ export async function consumeAiQuota(ip: string): Promise<AiQuotaResult> {
   if (daily.day !== day) { daily.day = day; daily.count = 0; clients.clear(); }
   if (daily.count >= dailyLimit()) return 'daily_limit';
 
+  if (clients.size >= AI_CLIENT_MAP_LIMIT) {
+    for (const [key, bucket] of clients) if (now - bucket.start >= 60000) clients.delete(key);
+    if (clients.size >= AI_CLIENT_MAP_LIMIT) return 'unavailable';
+  }
+
   let bucket = clients.get(ip);
   if (!bucket || now - bucket.start >= 60000) clients.set(ip, bucket = { start: now, count: 0 });
   if (bucket.count >= perIpLimit()) return 'ip_limit';
@@ -73,4 +81,10 @@ export function resetAiQuota(): void {
   clients.clear();
   daily.day = '';
   daily.count = 0;
+}
+
+/** Test helper: seeds one process-local bucket with a fixed window start. */
+export function seedAiClientForTest(ip: string, start: number): void {
+  if (!daily.day) daily.day = new Date().toISOString().slice(0, 10);
+  clients.set(ip, { start, count: 0 });
 }

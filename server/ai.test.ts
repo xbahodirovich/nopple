@@ -16,7 +16,7 @@ const saved = {
 
 test.before(() => {
   process.env.AI_FALLBACK_ENABLED = 'true';
-  process.env.NODE_ENV = 'test';
+  process.env.NODE_ENV = 'development';
   delete process.env.VERCEL_ENV;
 });
 test.after(() => {
@@ -45,7 +45,7 @@ const answer = (operations: unknown) => new Response(JSON.stringify({ choices: [
 test('server sends full geometry and returns validated operations', async () => {
   const result = await request(answer({ operations: [{ type: 'move_object', targetId: 'object_sofa', position: { x: -3, y: 0, z: 1 } }] }));
   assert.equal(result.status, 200); assert.match(result.upstreamBody, /wall_center_n/); assert.match(result.upstreamBody, /clear_thinking/);
-  assert.match(result.upstreamBody, /"max_tokens":8192/);
+  assert.match(result.upstreamBody, /"max_tokens":2048/);
 });
 test('server rejects bad IDs, missing transforms and unexpected operations atomically', async () => {
   for (const operations of [
@@ -163,6 +163,28 @@ test('Vercel preview requires Redis quota even with explicit local caps', async 
     if (nodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = nodeEnv;
     if (vercelEnv === undefined) delete process.env.VERCEL_ENV; else process.env.VERCEL_ENV = vercelEnv;
     if (key === undefined) delete process.env.NVIDIA_API_KEY; else process.env.NVIDIA_API_KEY = key;
+    if (redisUrl === undefined) delete process.env.UPSTASH_REDIS_REST_URL; else process.env.UPSTASH_REDIS_REST_URL = redisUrl;
+    if (redisToken === undefined) delete process.env.UPSTASH_REDIS_REST_TOKEN; else process.env.UPSTASH_REDIS_REST_TOKEN = redisToken;
+  }
+});
+test('hosted mode is the default when the environment is unset', async () => {
+  const nodeEnv = process.env.NODE_ENV, vercelEnv = process.env.VERCEL_ENV, key = process.env.NVIDIA_API_KEY;
+  const perIp = process.env.AI_PER_IP_PER_MINUTE, daily = process.env.AI_DAILY_CAP;
+  const redisUrl = process.env.UPSTASH_REDIS_REST_URL, redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+  try {
+    process.env.NVIDIA_API_KEY = 'nvapi-hosted';
+    delete process.env.NODE_ENV; delete process.env.VERCEL_ENV;
+    delete process.env.AI_PER_IP_PER_MINUTE; delete process.env.AI_DAILY_CAP;
+    delete process.env.UPSTASH_REDIS_REST_URL; delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    const result = await request(answer({}), 'move sofa');
+    assert.equal(result.status, 503, 'unset environments must fail safe with a quota error');
+    assert.match(result.body, /rate limit/i);
+  } finally {
+    if (nodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = nodeEnv;
+    if (vercelEnv === undefined) delete process.env.VERCEL_ENV; else process.env.VERCEL_ENV = vercelEnv;
+    if (key === undefined) delete process.env.NVIDIA_API_KEY; else process.env.NVIDIA_API_KEY = key;
+    if (perIp === undefined) delete process.env.AI_PER_IP_PER_MINUTE; else process.env.AI_PER_IP_PER_MINUTE = perIp;
+    if (daily === undefined) delete process.env.AI_DAILY_CAP; else process.env.AI_DAILY_CAP = daily;
     if (redisUrl === undefined) delete process.env.UPSTASH_REDIS_REST_URL; else process.env.UPSTASH_REDIS_REST_URL = redisUrl;
     if (redisToken === undefined) delete process.env.UPSTASH_REDIS_REST_TOKEN; else process.env.UPSTASH_REDIS_REST_TOKEN = redisToken;
   }

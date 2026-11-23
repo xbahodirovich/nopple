@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { consumeAiQuota, resetAiQuota } from './quota.ts';
+import { AI_CLIENT_MAP_LIMIT, consumeAiQuota, resetAiQuota, seedAiClientForTest } from './quota.ts';
 
 const saved = {
   perIp: process.env.AI_PER_IP_PER_MINUTE,
@@ -81,4 +81,20 @@ test('a per-IP rejection does not consume the global daily cap', async () => {
   assert.equal(await consumeAiQuota('ip-a'), 'ip_limit');
   assert.equal(await consumeAiQuota('ip-b'), 'ok');
   assert.equal(await consumeAiQuota('ip-c'), 'daily_limit');
+});
+
+test('expired per-IP buckets are pruned when the map fills', async () => {
+  process.env.AI_PER_IP_PER_MINUTE = '10';
+  process.env.AI_DAILY_CAP = String(AI_CLIENT_MAP_LIMIT * 2);
+  const now = Date.now();
+  for (let i = 0; i < AI_CLIENT_MAP_LIMIT; i++) seedAiClientForTest(`expired-${i}`, now - 120000);
+  assert.equal(await consumeAiQuota('fresh-ip'), 'ok');
+});
+
+test('a full map of active per-IP buckets fails closed', async () => {
+  process.env.AI_PER_IP_PER_MINUTE = '10';
+  process.env.AI_DAILY_CAP = String(AI_CLIENT_MAP_LIMIT * 2);
+  const now = Date.now();
+  for (let i = 0; i < AI_CLIENT_MAP_LIMIT; i++) seedAiClientForTest(`active-${i}`, now);
+  assert.equal(await consumeAiQuota('fresh-ip'), 'unavailable');
 });

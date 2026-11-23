@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { IncomingMessage } from 'node:http';
-import { callerKeysAllowed, requestIp } from './ai-guard.ts';
+import { callerKeysAllowed, hostedAiMode, requestIp } from './ai-guard.ts';
 
 const saved = {
   nodeEnv: process.env.NODE_ENV,
@@ -51,6 +51,29 @@ test('caller keys are allowed only outside production and Vercel', () => {
     assert.equal(callerKeysAllowed(), false);
     delete process.env.VERCEL_ENV;
     assert.equal(callerKeysAllowed(), true);
+  } finally {
+    restore('NODE_ENV', saved.nodeEnv);
+    restore('VERCEL', saved.vercel);
+    restore('VERCEL_ENV', saved.vercelEnv);
+  }
+});
+
+test('hosted mode is the default unless the environment is explicitly development', () => {
+  try {
+    delete process.env.NODE_ENV;
+    delete process.env.VERCEL_ENV;
+    assert.equal(hostedAiMode(), true, 'an unset environment must fail safe');
+    process.env.NODE_ENV = 'production';
+    assert.equal(hostedAiMode(), true);
+    process.env.VERCEL_ENV = 'preview';
+    assert.equal(hostedAiMode(), true);
+    process.env.NODE_ENV = 'development';
+    process.env.VERCEL_ENV = 'preview';
+    assert.equal(hostedAiMode(), true, 'Vercel preview stays hosted');
+    process.env.VERCEL_ENV = 'development';
+    assert.equal(hostedAiMode(), false);
+    delete process.env.NODE_ENV;
+    assert.equal(hostedAiMode(), false, 'vercel dev is explicitly development');
   } finally {
     restore('NODE_ENV', saved.nodeEnv);
     restore('VERCEL', saved.vercel);

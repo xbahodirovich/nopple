@@ -12,7 +12,7 @@ const savedNodeEnv = process.env.NODE_ENV;
 const savedVercelEnv = process.env.VERCEL_ENV;
 test.before(() => {
   process.env.AI_FALLBACK_ENABLED = 'true';
-  process.env.NODE_ENV = 'test';
+  process.env.NODE_ENV = 'development';
   delete process.env.VERCEL_ENV;
 });
 test.after(() => {

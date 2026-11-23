@@ -18,6 +18,9 @@ export default defineConfig(({mode}) => {
       return html.replace(/(<meta property="og:image" content=")([^" ]+)(")/, (_match,start,path,end)=>start+new URL(path,origin).href+end).replace('</head>',`<meta property="og:url" content="${new URL(context.path,origin).href}"></head>`);
     } },
     configureServer(server) {
+      // `vite dev` serves the AI middleware locally; treat it as explicitly
+      // development so hosted quota rules do not apply to local design work.
+      if (!process.env.NODE_ENV) process.env.NODE_ENV = 'development';
       server.middlewares.use(cleanRoutes);
       server.middlewares.use('/api/ai/operations', (req, res) => { void handleAiRequest(req, res); });
       server.middlewares.use('/api/ai/generate', (req, res) => { void handleGenerationRequest(req, res); });
