@@ -214,3 +214,18 @@ test('house request detection distinguishes replacement from restyling', async (
   assert.equal(isHouseRequest('Design a modern\n house for a family'), true);
   assert.equal(isHouseRequest('make the house cozy'), false);
 });
+
+test('failures classify into clear UI states', async () => {
+  const { classifyAiFailure, aiFallbackClientEnabled } = await import('./ai.ts');
+  assert.equal(classifyAiFailure(new Error('Hosted AI is disabled. Set AI_FALLBACK_ENABLED=true on the server to enable it.')), 'off');
+  assert.equal(classifyAiFailure(new Error('Hosted AI is unavailable. Using the offline designer.')), 'unconfigured');
+  assert.equal(classifyAiFailure(new Error('AI request limit reached. Using offline designer.')), 'unavailable');
+  assert.equal(classifyAiFailure(new Error('AI daily limit reached. Using offline designer.')), 'unavailable');
+  assert.equal(classifyAiFailure(new Error('A distributed AI quota is required on Vercel.')), 'unconfigured');
+  assert.equal(classifyAiFailure(new Error('AI request cancelled.')), 'cancelled');
+  assert.equal(classifyAiFailure(new Error('Select a room, wall, or object first')), 'selection');
+  assert.equal(classifyAiFailure(new Error('This request affects something outside your selection. Select that room or item instead.')), 'invalid');
+  assert.equal(classifyAiFailure(new Error('The request or AI response was invalid. Nothing was changed.')), 'invalid');
+  assert.equal(classifyAiFailure(new Error('Something unexpected')), 'error');
+  assert.equal(aiFallbackClientEnabled(), false, 'the client fallback flag defaults to off');
+});

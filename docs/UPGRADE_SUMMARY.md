@@ -42,11 +42,15 @@ Every variable is listed in `.env.example`. Credentials are optional for local o
 
 | Variable | Purpose/default |
 | --- | --- |
-| `NVIDIA_API_KEY` | Secret server NVIDIA NIM credential; absent means offline fallback. Never prefix with VITE. |
+| `NVIDIA_API_KEY` | Secret server NVIDIA NIM credential; absent means hosted requests return 503. Never prefix with VITE. Caller-supplied keys are accepted only outside production and Vercel. |
+| `AI_FALLBACK_ENABLED` | Server kill switch for hosted AI. Must be exactly `true`; otherwise both AI endpoints return 503. |
+| `VITE_ENABLE_AI_FALLBACK` | Build-time client opt-in for hosted fallback in the editors. Default off; with it off, the UI behaves exactly like the local-only interpreter. |
 | `AI_PER_IP_PER_MINUTE` | Requests per IP per minute; default 10. |
-| `AI_DAILY_CAP` | Total AI requests per UTC day; default 500. Zero disables hosted requests. |
+| `AI_DAILY_CAP` | Deployment-wide daily cap across all callers; default 500. Reaching it returns 503 (per-IP exhaustion still returns 429). |
 | `UPSTASH_REDIS_REST_URL` | Server Redis REST endpoint for shared atomic quotas. |
-| `UPSTASH_REDIS_REST_TOKEN` | Secret Redis token; use with URL. |
+| `UPSTASH_REDIS_REST_TOKEN` | Secret Redis token; use with URL. Required on Vercel (any environment). |
+
+Hosted mode is the safe default: server-key spending requires an enforced quota unless the environment is explicitly local development (`NODE_ENV=development`, or `VERCEL_ENV=development` from `vercel dev`). Vercel deployments always require Upstash Redis; a standalone production server may instead set explicit `AI_PER_IP_PER_MINUTE` and `AI_DAILY_CAP`. A missing `NVIDIA_API_KEY` returns a generic 503. The provider request caps output at `max_tokens: 2048`. Client requests never send a browser key and never send the full project — only the selection-scoped context built by `buildAiContext`.
 | `VITE_SUPABASE_URL` | Public Supabase project URL. |
 | `VITE_SUPABASE_ANON_KEY` | Public anon key, protected by RLS. Never use a service-role key here. |
 | `VITE_ANALYTICS_PROVIDER` | `plausible` sends Plausible event payloads; another nonempty value sends generic `{event,properties}` JSON. Empty disables analytics. |

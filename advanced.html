@@ -48,7 +48,7 @@
         <button class="icon-button" id="btn-export" title="Export .mopple project">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         </button>
-        <button class="icon-button" id="btn-apikey" hidden title="AI connection is deferred">
+        <button class="icon-button" id="btn-apikey" hidden title="AI settings">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
         </button>
       </div>
@@ -224,15 +224,15 @@
     </main>
   </div>
 
-  <!-- API Key Modal -->
+  <!-- AI Settings Modal (no keys: hosted AI is configured on the server) -->
   <div class="modal-backdrop" id="modal-apikey">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="ai-settings-title">
-      <div class="modal-title" id="ai-settings-title">NVIDIA NIM AI Configuration</div>
+      <div class="modal-title" id="ai-settings-title">AI settings</div>
       <div class="modal-desc">
-        Hosted AI works automatically when configured. This optional advanced override uses your personal NVIDIA NIM key from <a href="https://build.nvidia.com" target="_blank" rel="noopener" style="color: var(--mint); text-decoration: underline;">build.nvidia.com</a> to power Nopple Studio with <strong>GLM 5.3 Flash</strong>. If hosted AI is unavailable, the offline designer handles common English, Russian and Uzbek requests.
+        Hosted AI is configured on the server — no key is needed, stored or sent from your browser. When the server has hosted AI enabled, a command the local rules cannot handle is sent to the AI service with only your text and the selected room, and the result is always previewed before you apply it.
       </div>
       <div class="prop-group">
-        <div class="prop-label">AI Model (NVIDIA NIM)</div>
+        <div class="prop-label">AI model</div>
         <select id="gemini-model-select" class="input-select">
           <option value="z-ai/glm-5.3-flash" selected>GLM 5.3 Flash (z-ai/glm-5.3-flash) — Recommended</option>
           <option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B Instruct (meta/llama-3.3-70b-instruct)</option>
@@ -240,14 +240,9 @@
           <option value="qwen/qwen2.5-72b-instruct">Qwen 2.5 72B Instruct (qwen/qwen2.5-72b-instruct)</option>
         </select>
       </div>
-      <div class="prop-group">
-        <div class="prop-label">NVIDIA NIM API Key</div>
-        <input type="password" id="apikey-input" class="input-text" placeholder="nvapi-xxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
-        <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Your key is kept in memory until this tab reloads. Use a personal <code>nvapi-</code> key; project data is sent to NVIDIA when you submit a request.</div>
-      </div>
       <div class="modal-actions">
         <button class="btn btn-secondary" id="btn-close-apikey">Cancel</button>
-        <button class="btn btn-primary" id="btn-save-apikey">Save Configuration</button>
+        <button class="btn btn-primary" id="btn-save-apikey">Save</button>
       </div>
     </div>
   </div>

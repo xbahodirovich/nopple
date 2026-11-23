@@ -11,13 +11,13 @@ npm install
 npm run dev
 ```
 
-Open `/editor` for Editor, `/advanced` for the full Studio tools, `/homes` for your library, and `/` for architectural inspiration and Editor entry. Legacy `.html` links redirect automatically. No credentials are needed for the local workflow. The editor does not call AI endpoints: design commands are interpreted locally and always previewed before you apply them. AI integration is deferred.
+Open `/editor` for Editor, `/advanced` for the full Studio tools, `/homes` for your library, and `/` for architectural inspiration and Editor entry. Legacy `.html` links redirect automatically. No credentials are needed for the local workflow. Design commands are interpreted locally and always previewed before you apply them. Hosted AI is an explicit per-deployment opt-in (see *Hosted AI* below); with it off, the editors never call AI endpoints.
 
 ## Editor
 
 Switch between architectural and furnished plans, or explore the 3D house. Select a room, wall or object to open its focused edit prompt. Preview supported local changes before applying, with undo and local saving. Architectural dimensions start enabled; interior dimensions are optional. Expand **Dimensions & schedules** to filter model measurements by level, category or search, export the filtered CSV, or download the current visible plan as SVG. Canvas labels prioritize overall dimensions and the selected wall/opening; the schedule supplies the complete measurements. Wall/room lengths use centerlines, overall extents use outer faces, and furniture dimensions exclude working clearances.
 
-See [AI_SETUP.md](docs/AI_SETUP.md) for where to configure a future NVIDIA key; adding a key does not yet enable AI in Editor.
+See [AI_SETUP.md](docs/AI_SETUP.md) for the hosted-AI environment variables and deployment steps. No API key is ever entered, stored or sent from the browser.
 
 ## Advanced Studio: design → compare → share
 
@@ -33,11 +33,28 @@ See [AI_SETUP.md](docs/AI_SETUP.md) for where to configure a future NVIDIA key; 
 
 Local snapshots and ten previous versions are saved on this browser/device. Download a project/package to keep an independent backup. Portable share links contain the project snapshot and cannot be revoked. Local captures are bounded to the twelve most recently captured projects and do not travel with cloud projects or `.mopple` files.
 
-## Optional cloud and future AI setup
+## Hosted AI (opt-in)
+
+Local rules handle common edits offline. When they cannot handle a command, the editor can fall back to a hosted model — but only when both the server and the client flags are on, and only for the selected room, wall or object. Requests carry the user's text plus a selection-scoped context (never the full project), the server validates every returned operation, and the result is always a reviewable preview that you apply or discard. No key is entered, stored or sent from the browser.
+
+| Variable | Meaning |
+| --- | --- |
+| `NVIDIA_API_KEY` | Server-side NVIDIA NIM key. Missing key → hosted requests return a generic 503. Never use a `VITE_` prefix; browser keys are not supported. |
+| `AI_FALLBACK_ENABLED` | Server kill switch. Must be exactly `true`, otherwise `/api/ai/operations` and `/api/ai/generate` return 503. Default off. |
+| `VITE_ENABLE_AI_FALLBACK` | Build-time client opt-in. Default off; with it off, the editors behave exactly like the local-only interpreter. |
+| `AI_PER_IP_PER_MINUTE` | Requests per IP per minute (default 10). Exceeding it returns 429. |
+| `AI_DAILY_CAP` | Deployment-wide daily cap across all callers (default 500). Reaching it returns 503. |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Atomic cross-instance quotas. Required on Vercel. |
+
+Quota policy: hosted mode is the default unless the environment is explicitly local development (`NODE_ENV=development`, or `VERCEL_ENV=development` from `vercel dev`). Vercel deployments (production and previews) require Upstash Redis; a standalone production server may instead set explicit `AI_PER_IP_PER_MINUTE` and `AI_DAILY_CAP`. Without a usable quota, hosted requests fail closed with 503 and the offline designer keeps working. Caller-supplied API keys are ignored in production and on Vercel — the server key is the only credential.
+
+To test on a Vercel preview: set `NVIDIA_API_KEY`, `AI_FALLBACK_ENABLED=true`, and both Upstash variables in the project's environment (previews use the same server key), deploy a preview, open the preview URL with `VITE_ENABLE_AI_FALLBACK=true` in the build environment, select a room or item, and submit a command the local interpreter does not know (for example `nudge this item left`). The status line should show the hosted states (thinking with cancel, rate limit, or unconfigured) and never apply anything without review.
+
+The free NVIDIA tier is intended for development only; put a paid key and enforced quotas behind any public deployment. `/api/ai/generate` remains a process-local concept-generation endpoint gated by the same flag, key and quota rules. Job status/cancellation require the random access token returned with the job; public job enumeration is disabled.
+
+## Optional cloud setup
 
 `.env.example` lists optional Supabase, telemetry, waitlist, canonical origin, and server settings. See [UPGRADE_SUMMARY.md](docs/UPGRADE_SUMMARY.md) and `supabase/001_alpha.sql` for setup. Cloud services were not provisioned or live-tested in this implementation. Cloud saves are serialized per editor session; concurrent writes from other devices still require conflict handling.
-
-The existing NVIDIA operations handler and Vercel adapters remain available for a later integration, but the Studio UI does not invoke them. `/api/ai/generate` is a process-local concept-generation endpoint, not durable storage or an image provider. Job status/cancellation require the random access token returned with the job; public job enumeration is disabled. Approval fingerprints include all brief requirement fields and detect changed inputs; they are not authentication or a server signature.
 
 Future image enhancement should consume actual model captures plus camera/material/geometry context. AI images are not implemented. Walkthrough navigation is deferred.
 

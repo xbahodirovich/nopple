@@ -2,6 +2,9 @@ import {normalizeLocalPrompt} from '../i18n/index.ts';
 import type { MoppleProjectEngine } from '../project/engine.ts';
 import type { SelectedEntity } from './canvas2d.ts';
 import { previewSelectionEdit } from '../project/selection-preview.ts';
+import { previewEditWithAi } from '../project/preview.ts';
+import { aiFallbackClientEnabled } from './ai.ts';
+import { aiStateMessage, aiThinkingLabel, aiCancelLabel } from './ai-status.ts';
 import type { DesignPreview } from '../project/preview.ts';
 
 export function createSelectionEditor(container:HTMLElement,engine:MoppleProjectEngine,onPreview:(preview:DesignPreview)=>void) {
@@ -24,10 +27,30 @@ export function createSelectionEditor(container:HTMLElement,engine:MoppleProject
     if(different){input.value='';error.textContent='';}
   }
   form.querySelector('#selection-close')!.addEventListener('click',()=>{form.hidden=true;});
+  const submitButton=form.querySelector<HTMLButtonElement>('button[type=submit]')!;
+  let thinking=false,abort:null|(()=>void)=null;
   form.addEventListener('submit',event=>{
-    event.preventDefault();if(!selected)return;error.textContent='';
-    try{const preview=previewSelectionEdit(engine,selected,normalizeLocalPrompt(input.value));preview.title=input.value;onPreview(preview);form.hidden=true;}
-    catch(reason){error.textContent=reason instanceof Error?reason.message:String(reason);input.focus();}
+    event.preventDefault();if(!selected)return;
+    if(thinking&&abort){abort();return;}
+    error.textContent='';
+    const request=normalizeLocalPrompt(input.value);
+    if(!aiFallbackClientEnabled()){
+      try{const preview=previewSelectionEdit(engine,selected,request);preview.title=input.value;onPreview(preview);form.hidden=true;}
+      catch(reason){error.textContent=reason instanceof Error?reason.message:String(reason);input.focus();}
+      return;
+    }
+    // Hosted fallback: local first, then the AI service; the preview is never applied directly.
+    const controller=new AbortController();abort=()=>controller.abort();thinking=true;
+    const restoreLabel=submitButton.textContent??'';
+    submitButton.textContent=aiCancelLabel();
+    error.textContent=aiThinkingLabel();
+    void (async()=>{
+      try{
+        const preview=await previewEditWithAi(engine,request,selected!,{signal:controller.signal});
+        preview.title=input.value;onPreview(preview);form.hidden=true;
+      }catch(reason){error.textContent=aiStateMessage(reason);input.focus();}
+      finally{thinking=false;abort=null;submitButton.textContent=restoreLabel;if(error.textContent===aiThinkingLabel())error.textContent='';}
+    })();
   });
   input.addEventListener('keydown',event=>{if(event.key==='Escape'){event.stopPropagation();form.hidden=true;}else if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();form.requestSubmit();}});
   const unsubscribe=engine.subscribe(()=>{if(selected)setSelection(selected);});

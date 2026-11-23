@@ -1325,3 +1325,11 @@ textarea { user-select:text; }
 }
 
 .furniture-kind-marker { width:12px; height:12px; border:1px solid var(--text-secondary); border-radius:3px; margin-inline:2px; }
+
+/* Privacy note shown next to the AI prompt when hosted fallback is enabled. */
+.ai-privacy-note {
+  margin: 8px 2px 0;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-muted, #8a9490);
+}

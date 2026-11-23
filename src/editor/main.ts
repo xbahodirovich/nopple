@@ -1,7 +1,7 @@
 import {initLanguage} from '../i18n/index.ts';
 import { createStudio } from './studio.ts';
 import { createSelectionEditor } from './selection-editor.ts';
-import { previewLocalEdit } from '../project/preview.ts';
+import { previewEditWithAi, previewLocalEdit } from '../project/preview.ts';
 import { track } from '../alpha/telemetry.ts';
 import { shareHome } from '../alpha/projects.ts';
 import { exportPlan, download } from '../alpha/exporters.ts';
@@ -16,7 +16,8 @@ import { MoppleProjectEngine } from '../project/engine.ts';
 import { roomPolygon } from '../project/geometry.ts';
 import type { MoppleInteriorObject } from '../project/schema.ts';
 import { parseProject } from '../project/validation.ts';
-import { isHouseRequest, getStoredApiKey, getStoredModel, setStoredApiKey, setStoredModel } from './ai.ts';
+import { isHouseRequest, getStoredModel, setStoredModel, aiFallbackClientEnabled } from './ai.ts';
+import { aiStateMessage, aiThinkingLabel, aiCancelLabel, aiNoticeText } from './ai-status.ts';
 import { Canvas2D, type SelectedEntity } from './canvas2d.ts';
 import { createArchitectureControls } from './architecture.ts';
 import { Canvas3D } from './canvas3d.ts';
@@ -80,7 +81,6 @@ export function initEditor() {
 
   // Modals
   const apiKeyModal = document.getElementById('modal-apikey') as HTMLElement;
-  const apiKeyInput = document.getElementById('apikey-input') as HTMLInputElement;
   const geminiModelSelect = document.getElementById('gemini-model-select') as HTMLSelectElement | null;
   const btnSaveApiKey = document.getElementById('btn-save-apikey') as HTMLButtonElement;
   const btnCloseApiKey = document.getElementById('btn-close-apikey') as HTMLButtonElement;
@@ -122,7 +122,7 @@ export function initEditor() {
     onExport: () => handleExport(),
     onImport: () => triggerFileInput(),
     onDeleteSelected: () => handleDeleteSelected(),
-    onOpenApiKeyModal: () => showStatus('AI connection is reserved for the final integration. Local previews are available now.', 'success'),
+    onOpenApiKeyModal: () => openApiKeyModal(),
   });
 
   // Synchronized Selection Handler
@@ -351,38 +351,63 @@ export function initEditor() {
   document.getElementById('btn-new-home')?.addEventListener('click', () => houseBrief.open('Describe your new home', true));
 
   // One outstanding request; errors preserve input and never guess a fallback edit.
+  // With VITE_ENABLE_AI_FALLBACK on, an unsupported local command may consult the
+  // hosted service; the result is always a reviewable preview, never a direct apply.
+  const hostedAi = aiFallbackClientEnabled();
+  if (hostedAi) {
+    const inputRow = document.querySelector('.ai-floating-bar .ai-input-row');
+    if (inputRow?.parentElement) {
+      const notice = document.createElement('p');
+      notice.className = 'ai-privacy-note';
+      notice.textContent = aiNoticeText();
+      inputRow.after(notice);
+    }
+  }
   let aiBusy = false;
+  let aiAbort: AbortController | null = null;
   async function runAiPrompt(promptText: string) {
     if (aiBusy) return;
     const text = promptText.trim();
     if (!text) { showStatus('Enter a house description or a change to make.', 'error'); aiInput.focus(); return; }
     if (isHouseRequest(text)) { houseBrief.open(text); return; }
-    aiBusy = true; aiSubmit.disabled = true;
+    aiBusy = true;
+    aiSubmit.disabled = !hostedAi;
+    if (hostedAi) aiSubmit.textContent = aiCancelLabel();
     document.querySelectorAll<HTMLButtonElement>('.ai-chip').forEach(b => b.disabled = true);
-    showStatus('Preparing a local preview…', 'loading');
+    showStatus(hostedAi ? aiThinkingLabel() : 'Preparing a local preview…', 'loading');
     try {
-      const preview = previewLocalEdit(engine, text, selectedEntity?.id);
+      const preview = hostedAi
+        ? await previewEditWithAi(engine, text, selectedEntity ?? undefined, { signal: (aiAbort = new AbortController()).signal })
+        : previewLocalEdit(engine, text, selectedEntity?.id);
       studio.review(preview);
       showStatus('Preview ready. Review the change before applying it.', 'success');
       aiInput.value = '';
-    } catch (error) { showStatus(errorMessage(error), 'error'); }
-    finally { aiBusy = false; aiSubmit.disabled = false; document.querySelectorAll<HTMLButtonElement>('.ai-chip').forEach(b => b.disabled = false); syncRenderPlan(); }
+    } catch (error) {
+      showStatus(hostedAi ? aiStateMessage(error) : errorMessage(error), 'error');
+    }
+    finally {
+      aiBusy = false; aiAbort = null;
+      aiSubmit.disabled = false; aiSubmit.textContent = 'Preview';
+      document.querySelectorAll<HTMLButtonElement>('.ai-chip').forEach(b => b.disabled = false); syncRenderPlan();
+    }
   }
-  aiSubmit.addEventListener('click', () => void runAiPrompt(aiInput.value));
+  aiSubmit.addEventListener('click', () => {
+    if (hostedAi && aiBusy && aiAbort) { aiAbort.abort(); return; }
+    void runAiPrompt(aiInput.value);
+  });
   aiInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); void runAiPrompt(aiInput.value); } });
   document.querySelectorAll<HTMLButtonElement>('.ai-chip[data-prompt]').forEach(chip => chip.addEventListener('click', () => {
     aiInput.value = chip.dataset.prompt || ''; void runAiPrompt(aiInput.value);
   }));
 
-  // API Key & Model Modal
+  // AI Settings modal: model preference only. No key is ever entered, stored or sent from the browser.
   let modalTrigger: HTMLElement | null = null;
   function openApiKeyModal() {
     modalTrigger = document.activeElement as HTMLElement | null;
-    apiKeyInput.value = getStoredApiKey();
     if (geminiModelSelect) {
       geminiModelSelect.value = getStoredModel();
     }
-    apiKeyModal.classList.add('show'); document.getElementById('editor-app')!.inert = true; apiKeyInput.focus();
+    apiKeyModal.classList.add('show'); document.getElementById('editor-app')!.inert = true; (geminiModelSelect ?? btnCloseApiKey).focus();
   }
 
   function closeApiKeyModal() {
@@ -405,19 +430,13 @@ export function initEditor() {
     }
   });
   btnSaveApiKey.addEventListener('click', () => {
-    setStoredApiKey(apiKeyInput.value);
     if (geminiModelSelect) {
       setStoredModel(geminiModelSelect.value);
     }
     closeApiKeyModal();
-    updateEngineBadge();
-    const hasKey = Boolean(getStoredApiKey());
-    if (hasKey) {
-      aiStatus.className = 'ai-status visible success';
-      aiStatus.textContent = `${getStoredModel()} configured. The key is kept only until this tab reloads.`;
-      if (statusTimeout) clearTimeout(statusTimeout);
-      statusTimeout = setTimeout(() => aiStatus.classList.remove('visible'), 4000);
-    }
+    showStatus('AI preferences saved.', 'success');
+    if (statusTimeout) clearTimeout(statusTimeout);
+    statusTimeout = setTimeout(() => aiStatus.classList.remove('visible'), 4000);
   });
 
   // Viewport HUD controls

@@ -29,7 +29,12 @@ export function previewLocalEdit(engine: MoppleProjectEngine, prompt: string, se
  * an explicit selection reaches the hosted service, and the result is always a
  * scratch preview that the user must apply.
  */
-export async function previewEditWithAi(engine: MoppleProjectEngine, prompt: string, selection?: AiSelection): Promise<DesignPreview> {
+export async function previewEditWithAi(
+  engine: MoppleProjectEngine,
+  prompt: string,
+  selection?: AiSelection,
+  options: { signal?: AbortSignal } = {},
+): Promise<DesignPreview> {
   try {
     return selection
       ? previewSelectionEdit(engine, selection, prompt)
@@ -39,7 +44,7 @@ export async function previewEditWithAi(engine: MoppleProjectEngine, prompt: str
     if (!selection) throw new Error(AI_SELECTION_REQUIRED);
     const revision = engine.revision;
     const project = engine.getSnapshot();
-    const operations = await requestAiOperations(prompt, project, selection);
+    const operations = await requestAiOperations(prompt, project, selection, options);
     return previewSelectionOperations(project, selection, operations, revision, prompt);
   }
 }

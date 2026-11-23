@@ -6,20 +6,6 @@ import { AI_SELECTION_REQUIRED, buildAiContext, type AiSelection } from '../proj
 
 export const DEFAULT_AI_MODEL = 'z-ai/glm-5.3-flash';
 export const DEFAULT_GEMINI_MODEL = DEFAULT_AI_MODEL;
-let tabApiKey = '';
-let migratedKey = false;
-export function getStoredApiKey(): string {
-  if (!migratedKey) {
-    migratedKey = true;
-    try {
-      tabApiKey = localStorage.getItem('mopple_nim_api_key') || '';
-      localStorage.removeItem('mopple_nim_api_key');
-      localStorage.removeItem('mopple_gemini_api_key');
-    } catch { /* Storage may be unavailable. */ }
-  }
-  return tabApiKey;
-}
-export function setStoredApiKey(key: string): void { getStoredApiKey(); tabApiKey = key.trim(); }
 export function getStoredModel(): string {
   try { const m = localStorage.getItem('mopple_ai_model'); return m && !m.includes('gemini') ? m : DEFAULT_AI_MODEL; }
   catch { return DEFAULT_AI_MODEL; }
@@ -28,18 +14,47 @@ export function setStoredModel(model: string): void {
   try { localStorage.setItem('mopple_ai_model', model.trim()); } catch { /* Optional preference. */ }
 }
 
+/** Hosted AI fallback is a per-deployment opt-in; the default is off. */
+export function aiFallbackClientEnabled(): boolean {
+  const env = (import.meta as { env?: Record<string, string | undefined> }).env;
+  return env?.VITE_ENABLE_AI_FALLBACK === 'true';
+}
+
+export type AiFailureKind = 'off' | 'unconfigured' | 'unavailable' | 'invalid' | 'selection' | 'cancelled' | 'error';
+
+/** Maps a thrown failure to a UI state so every surface can show clear copy. */
+export function classifyAiFailure(error: unknown): AiFailureKind {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/Select a room, wall, or object first/.test(message)) return 'selection';
+  if (/cancelled/i.test(message)) return 'cancelled';
+  if (/Hosted AI is disabled/i.test(message)) return 'off';
+  if (/not configured|Hosted AI is unavailable|rate limit is required|distributed AI quota is required/i.test(message)) return 'unconfigured';
+  if (/limit reached|limits unavailable|temporarily unavailable|timed out|Cannot reach the AI service|endpoint unavailable/i.test(message)) return 'unavailable';
+  if (/outside your selection|replacing your house|unusable|invalid/i.test(message)) return 'invalid';
+  return 'error';
+}
+
 let requestInFlight = false;
 /**
  * Requests operations for one selection and returns them for preview. It never
  * applies anything, never sends a browser key, and never sends the full project.
  */
-export async function requestAiOperations(prompt: string, project: MoppleProject, selection: AiSelection): Promise<MoppleOperations> {
+export async function requestAiOperations(
+  prompt: string,
+  project: MoppleProject,
+  selection: AiSelection,
+  options: { signal?: AbortSignal } = {},
+): Promise<MoppleOperations> {
   const text = prompt.trim();
   if (!text) throw new Error('Enter a design request first.');
   if (isHouseRequest(text)) throw new Error('Complete and review the house brief before creating a starter concept.');
   if (!selection) throw new Error(AI_SELECTION_REQUIRED);
   if (requestInFlight) throw new Error('A request is already running. Wait for it to finish.');
   requestInFlight = true;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 95000);
+  const abortFromUi = () => controller.abort();
+  options.signal?.addEventListener('abort', abortFromUi, { once: true });
   try {
     const model = getStoredModel();
     const context = buildAiContext(project, selection);
@@ -48,11 +63,15 @@ export async function requestAiOperations(prompt: string, project: MoppleProject
       response = await fetch('/api/ai/operations', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: text, project: context, selectedId: selection.id, model, mode: 'EDIT' }),
-        signal: AbortSignal.timeout(95000),
+        signal: controller.signal,
       });
     } catch (error) {
+      if (options.signal?.aborted) throw new Error('AI request cancelled.');
       if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) throw new Error('AI timed out. Your design is unchanged. Try a smaller request.');
       throw new Error('Cannot reach the AI service. Check your connection and run Nopple with its server. Your design is unchanged.');
+    } finally {
+      clearTimeout(timeout);
+      options.signal?.removeEventListener('abort', abortFromUi);
     }
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) {
