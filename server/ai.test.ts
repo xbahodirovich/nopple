@@ -26,21 +26,26 @@ test.after(() => {
 });
 test.beforeEach(() => resetAiQuota());
 
-async function request(response: Response, operationsPrompt = 'move the sofa left', authorization = 'Bearer nvapi-test') {
+async function request(response: Response, operationsPrompt = 'move the sofa left', authorization: string | null = 'Bearer nvapi-test') {
   const req = Readable.from([Buffer.from(JSON.stringify({ prompt: operationsPrompt, model: 'z-ai/glm-5.3-flash', project }))]) as IncomingMessage;
-  req.method = 'POST'; req.headers = { 'content-type': 'application/json', authorization };
+  req.method = 'POST'; req.headers = { 'content-type': 'application/json', ...(authorization ? { authorization } : {}) };
   let status = 0, body = ''; const res = new EventEmitter() as ServerResponse;
   res.writeHead = ((code: number) => { status = code; return res; }) as ServerResponse['writeHead'];
   res.end = ((data: string) => { body = data; return res; }) as ServerResponse['end'];
-  let upstreamBody = '';
-  await handleAiRequest(req, res, async (_url, init) => { upstreamBody = String(init?.body); return response.clone(); });
-  return { status, body, upstreamBody };
+  let upstreamBody = '', upstreamAuthorization = '';
+  await handleAiRequest(req, res, async (_url, init) => {
+    upstreamBody = String(init?.body);
+    upstreamAuthorization = String((init?.headers as Record<string, string> | undefined)?.Authorization ?? '');
+    return response.clone();
+  });
+  return { status, body, upstreamBody, upstreamAuthorization };
 }
 const answer = (operations: unknown) => new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(operations) } }] }));
 
 test('server sends full geometry and returns validated operations', async () => {
   const result = await request(answer({ operations: [{ type: 'move_object', targetId: 'object_sofa', position: { x: -3, y: 0, z: 1 } }] }));
   assert.equal(result.status, 200); assert.match(result.upstreamBody, /wall_center_n/); assert.match(result.upstreamBody, /clear_thinking/);
+  assert.match(result.upstreamBody, /"max_tokens":8192/);
 });
 test('server rejects bad IDs, missing transforms and unexpected operations atomically', async () => {
   for (const operations of [
@@ -79,18 +84,45 @@ test('server returns 503 when AI_FALLBACK_ENABLED is off', async () => {
     assert.match(result.body, /disabled/);
   } finally { process.env.AI_FALLBACK_ENABLED = 'true'; }
 });
-test('production and Vercel preview reject caller-supplied keys', async () => {
+test('production and Vercel preview never use caller-supplied keys', async () => {
   const nodeEnv = process.env.NODE_ENV, vercelEnv = process.env.VERCEL_ENV, key = process.env.NVIDIA_API_KEY;
+  const perIp = process.env.AI_PER_IP_PER_MINUTE, daily = process.env.AI_DAILY_CAP;
   try {
     delete process.env.NVIDIA_API_KEY;
     process.env.NODE_ENV = 'production';
     delete process.env.VERCEL_ENV;
-    assert.equal((await request(answer({}), 'move sofa', 'Bearer nvapi-caller')).status, 401);
+    const production = await request(answer({}), 'move sofa', 'Bearer nvapi-caller');
+    assert.equal(production.status, 503, 'missing server key is unavailable, not authenticated');
+    assert.equal(production.upstreamAuthorization, '', 'caller key must not reach the provider');
     process.env.VERCEL_ENV = 'preview';
-    assert.equal((await request(answer({}), 'move sofa', 'Bearer nvapi-caller')).status, 401);
+    const preview = await request(answer({}), 'move sofa', 'Bearer nvapi-caller');
+    assert.equal(preview.status, 503);
+    assert.equal(preview.upstreamAuthorization, '');
+
+    delete process.env.VERCEL_ENV;
+    process.env.NVIDIA_API_KEY = 'nvapi-hosted';
+    process.env.AI_PER_IP_PER_MINUTE = '10'; process.env.AI_DAILY_CAP = '10';
+    const hosted = await request(answer({ operations: [{ type: 'remove_object', targetId: 'object_sofa' }] }), 'move sofa', 'Bearer nvapi-caller');
+    assert.equal(hosted.status, 200);
+    assert.equal(hosted.upstreamAuthorization, 'Bearer nvapi-hosted');
   } finally {
     if (nodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = nodeEnv;
     if (vercelEnv === undefined) delete process.env.VERCEL_ENV; else process.env.VERCEL_ENV = vercelEnv;
+    if (key === undefined) delete process.env.NVIDIA_API_KEY; else process.env.NVIDIA_API_KEY = key;
+    if (perIp === undefined) delete process.env.AI_PER_IP_PER_MINUTE; else process.env.AI_PER_IP_PER_MINUTE = perIp;
+    if (daily === undefined) delete process.env.AI_DAILY_CAP; else process.env.AI_DAILY_CAP = daily;
+  }
+});
+test('missing NVIDIA_API_KEY returns a generic 503, not 401', async () => {
+  const key = process.env.NVIDIA_API_KEY;
+  delete process.env.NVIDIA_API_KEY;
+  try {
+    const result = await request(answer({}), 'move sofa', null);
+    assert.equal(result.status, 503);
+    assert.match(result.body, /unavailable/i);
+    assert.doesNotMatch(result.body, /NVIDIA_API_KEY|nvapi/i);
+    assert.equal(result.upstreamAuthorization, '');
+  } finally {
     if (key === undefined) delete process.env.NVIDIA_API_KEY; else process.env.NVIDIA_API_KEY = key;
   }
 });

@@ -53,6 +53,11 @@ export function quotaConfigurationIssue(): string | undefined {
 }
 
 export function requestIp(req: IncomingMessage): string {
-  const forwarded = req.headers['x-forwarded-for']?.toString().split(',')[0].trim();
-  return forwarded || req.socket?.remoteAddress || 'local';
+  // Vercel's edge proxy sets this header; on a standalone server a caller can
+  // forge it, so only the socket address is trustworthy there.
+  if (process.env.VERCEL === '1' || process.env.VERCEL_ENV !== undefined) {
+    const forwarded = req.headers['x-forwarded-for']?.toString().split(',')[0].trim();
+    if (forwarded) return forwarded;
+  }
+  return req.socket?.remoteAddress || 'local';
 }

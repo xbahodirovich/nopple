@@ -330,6 +330,10 @@ export async function handleGenerationRequest(
   }
 
   const authorization = resolveAuthorization(req);
+  if (!authorization) {
+    send(503, { error: 'Hosted AI is unavailable. Using the offline designer.' });
+    return;
+  }
   if (!validAuthorization(authorization)) {
     send(401, { error: 'Hosted AI is not configured. Using the offline designer.' });
     return;

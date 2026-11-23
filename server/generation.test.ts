@@ -149,3 +149,20 @@ test('HTTP generation endpoint is disabled by AI_FALLBACK_ENABLED', async () => 
     assert.match(body, /disabled/);
   } finally { process.env.AI_FALLBACK_ENABLED = 'true'; }
 });
+
+test('HTTP generation endpoint returns 503 when the server key is missing', async () => {
+  const key = process.env.NVIDIA_API_KEY;
+  delete process.env.NVIDIA_API_KEY;
+  try {
+    const req = Readable.from([]) as IncomingMessage;
+    req.method = 'POST'; req.url = '/api/ai/generate'; req.headers = { 'content-type': 'application/json' };
+    let status = 0, body = '';
+    const res = { writeHead(code: number) { status = code; }, end(data?: string) { body = data ?? ''; } };
+    await handleGenerationRequest(req, res as unknown as ServerResponse);
+    assert.equal(status, 503);
+    assert.match(body, /unavailable/i);
+    assert.doesNotMatch(body, /NVIDIA_API_KEY|nvapi/i);
+  } finally {
+    if (key === undefined) delete process.env.NVIDIA_API_KEY; else process.env.NVIDIA_API_KEY = key;
+  }
+});

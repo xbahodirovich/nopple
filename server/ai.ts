@@ -25,6 +25,7 @@ export async function handleAiRequest(req: IncomingMessage, res: ServerResponse,
   }
   if (!aiFallbackEnabled()) { send(503, { error: 'Hosted AI is disabled. Set AI_FALLBACK_ENABLED=true on the server to enable it.' }); return; }
   const authorization = resolveAuthorization(req);
+  if (!authorization) { send(503, { error: 'Hosted AI is unavailable. Using the offline designer.' }); return; }
   if (!validAuthorization(authorization)) { send(401, { error: 'Hosted AI is not configured. Using the offline designer.' }); return; }
   const quotaIssue = quotaConfigurationIssue();
   if (quotaIssue) { send(503, { error: quotaIssue }); return; }
