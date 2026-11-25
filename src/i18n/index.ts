@@ -68,6 +68,10 @@ Object.assign(messages,{
  'Open the editor, shape the design, and send clients a link to explore.':['Откройте редактор, создайте проект и отправьте клиентам ссылку для просмотра.','Tahrirchini oching, loyihani yarating va mijozlarga ko‘rish uchun havola yuboring.'],
  'Show clients the home before it exists.':['Покажите клиентам дом до того, как он построен.','Mijozlarga uy hali qurilmagan paytda ko‘rsating.']
 });
+Object.assign(messages,{
+ 'Sending…':['Отправляем…','Yuborilmoqda…'],
+ 'Could not join the waitlist. Please try again.':['Не удалось подписаться. Попробуйте ещё раз.','Ro‘yxatga qo‘shilmedi. Yana urinib ko‘ring.']
+});
 let language:Language='en';try{const saved=localStorage.getItem('nopple_language');if(saved==='ru'||saved==='uz')language=saved;}catch{}
 const measureTerms:Record<string,[string,string]>={"centerline length": ["длина по оси", "o‘q bo‘ylab uzunlik"], "height": ["высота", "balandlik"], "width": ["ширина", "kenglik"], "depth": ["глубина", "chuqurlik"], "thickness": ["толщина", "qalinlik"], "sill above floor": ["подоконник над полом", "tokchaning poldan balandligi"], "from wall start": ["от начала стены", "devor boshidan"], "preceding wall pier": ["предыдущий простенок", "oldingi devor oralig‘i"], "final wall pier": ["конечный простенок", "oxirgi devor oralig‘i"], "floor height": ["высота этажа", "qavat balandligi"], "elevation datum": ["высотная отметка", "sath belgisi"], "X extent (centerlines)": ["габарит X (по осям)", "X gabariti (o‘qlar)"], "Z extent (centerlines)": ["габарит Z (по осям)", "Z gabariti (o‘qlar)"], "ceiling height": ["высота потолка", "shift balandligi"], "polygon area (centerlines)": ["площадь контура (по осям)", "kontur maydoni (o‘qlar)"], "centerlines · meters": ["по осям · метры", "o‘qlar bo‘yicha · metr"]};
 function translateMeasure(source:string){for(const [key,pair] of Object.entries(measureTerms)){if(source.endsWith(" · "+key))return source.slice(0,-key.length)+pair[language==='ru'?0:1];}return source;}

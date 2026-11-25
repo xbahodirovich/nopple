@@ -56,7 +56,8 @@ Hosted mode is the safe default: server-key spending requires an enforced quota 
 | `VITE_ANALYTICS_PROVIDER` | `plausible` sends Plausible event payloads; another nonempty value sends generic `{event,properties}` JSON. Empty disables analytics. |
 | `VITE_ANALYTICS_URL` | Public event ingestion endpoint; must accept browser CORS. |
 | `VITE_ERROR_TRACKING_URL` | Public JSON error ingestion endpoint; empty disables reporting. Must accept browser CORS. |
-| `VITE_WAITLIST_URL` | Public JSON `{email}` subscription endpoint; must accept browser CORS. Missing: interest is saved on this device and explicitly labelled as local. |
+| `VITE_WAITLIST_URL` | Deprecated alias of `VITE_WAITLIST_ENDPOINT`. |
+| `VITE_WAITLIST_ENDPOINT` | Public JSON `{email}` subscription endpoint; must accept browser CORS. Missing: interest is saved on this device and explicitly labelled as local. |
 | `VITE_SITE_URL` | Canonical deployed origin, e.g. your actual HTTPS domain. Makes OG image and URL metadata absolute at build time. Missing: relative OG image metadata remains. |
 | `PORT` | Standalone server port; default 3000. |
 | `HOST` | Standalone server bind address; default 127.0.0.1. |
