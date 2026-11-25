@@ -57,3 +57,7 @@ body.product-page { user-select:text; line-height:1.6; }
  .share-page .product-header { padding:12px 16px; gap:12px; }
  .share-title h1 { font-size:18px; }
 }
+
+#studio-brand { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; font-weight: 500; max-width: 40vw; }
+#studio-brand img { width: 28px; height: 28px; object-fit: contain; background: #fff; border-radius: 6px; padding: 2px; }
+@media(max-width:640px){ #studio-brand { display: none; } }

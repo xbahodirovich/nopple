@@ -1331,3 +1331,13 @@ textarea { user-select:text; }
   line-height: 1.5;
   color: var(--text-muted, #8a9490);
 }
+
+/* Studio branding (share links) */
+.studio-branding { margin: 10px 16px 0; font-size: 13px; }
+.studio-branding summary { cursor: pointer; min-height: 32px; display: flex; align-items: center; color: inherit; }
+.studio-fields { display: grid; gap: 6px; padding: 10px 0 4px; max-width: 420px; }
+.studio-fields label { font-size: 11px; color: var(--text-muted, #8a9490); }
+.studio-fields input[type='text'], .studio-fields input:not([type]) { min-height: 36px; padding: 6px 10px; }
+.studio-fields img { width: 40px; height: 40px; object-fit: contain; border: 1px solid var(--line, #3a423e); border-radius: 6px; background: #fff; }
+.studio-fields button { justify-self: start; }
+#studio-status:empty { display: none; }

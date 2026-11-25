@@ -76,7 +76,15 @@ Object.assign(messages,{
  'Size (m)':['Размер (м)','O‘lcham (m)'],
  'Materials CSV':['Материалы CSV','Materiallar CSV'],
  'Materials PDF':['Материалы PDF','Materiallar PDF'],
- 'Export GLB':['Экспорт GLB','GLB eksport']
+ 'Export GLB':['Экспорт GLB','GLB eksport'],
+ 'Studio branding':['Брендинг студии','Studiya brendi'],
+ 'Studio name':['Название студии','Studiya nomi'],
+ 'Logo (PNG, JPEG or WebP, up to 20 KB)':['Логотип (PNG, JPEG или WebP, до 20 КБ)','Logotip (PNG, JPEG yoki WebP, 20 KB gacha)'],
+ 'Save studio profile':['Сохранить профиль студии','Studiya profilini saqlash'],
+ 'Studio profile saved.':['Профиль студии сохранён.','Studiya profili saqlandi.'],
+ 'Logo must be PNG, JPEG or WebP.':['Логотип должен быть в формате PNG, JPEG или WebP.','Logotip faqat PNG, JPEG yoki WebP formatida bo‘lishi kerak.'],
+ 'Logo is too large after downscaling. Use a simpler image.':['Логотип слишком велик после уменьшения. Используйте более простой рисунок.','Kichiklashtirilgandan keyin logotip hali juda katta. Soddaroq rasm tanlang.'],
+ 'Enter a studio name.':['Введите название студии.','Studiya nomini kiriting.']
 });
 Object.assign(messages,{
  'Sending…':['Отправляем…','Yuborilmoqda…'],
