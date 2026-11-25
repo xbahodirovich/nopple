@@ -11,6 +11,7 @@ import {
   type BriefTopicKey,
 } from '../project/brief.ts';
 import { createProject, MoppleProjectEngine } from '../project/engine.ts';
+import { homeTemplates } from '../project/templates.ts';
 import { errorMessage } from './ui.ts';
 
 const DRAFT_KEY = 'mopple_brief_draft';
@@ -45,7 +46,7 @@ export function createBriefDialog(engine: MoppleProjectEngine, onCreated: () => 
 
     <p class="brief-intro">Describe the home you need. Fill in the details or use the guided chat. Enter “No preference” for anything you want to leave open.</p>
 
-    <div class="brief-starters" aria-label="Starter briefs"><button type="button" class="btn btn-secondary" data-starter="compact">Compact home · 90 m²</button><button type="button" class="btn btn-secondary" data-starter="family">Family home · 220 m²</button><button type="button" class="btn btn-secondary" data-starter="courtyard">Your home · 240 m²</button></div>
+    <div class="brief-starters" aria-label="Starter briefs">${homeTemplates.map(template => `<button type="button" class="btn btn-secondary" data-starter="${template.id}">${template.label}</button>`).join('')}</div>
 
     <div class="brief-view-tabs" role="tablist">
       <button type="button" class="brief-tab active" id="brief-tab-form" role="tab" aria-selected="true">Your requirements</button>
@@ -288,15 +289,16 @@ export function createBriefDialog(engine: MoppleProjectEngine, onCreated: () => 
   });
 
   dialog.querySelectorAll<HTMLButtonElement>('[data-starter]').forEach(button => button.addEventListener('click', () => {
-    const id = button.dataset.starter;
+    const template = homeTemplates.find(entry => entry.id === button.dataset.starter);
+    if (!template) return;
     const fields = {
-      request: id === 'compact' ? 'A compact 90 m² home with 2 bedrooms and 1 bathroom' : id === 'family' ? 'A two-floor 220 m² family home with 4 bedrooms and 2 bathrooms' : 'A two-floor 240 m² home with 3 bedrooms, 2 bathrooms, an office and courtyard',
-      area: id === 'compact' ? 90 : id === 'family' ? 220 : 240,
-      bedrooms: id === 'family' ? 4 : id === 'compact' ? 2 : 3,
-      bathrooms: id === 'compact' ? 1 : 2,
-      floors: id === 'compact' ? 1 : 2,
+      request: template.request,
+      area: template.area,
+      bedrooms: template.bedrooms,
+      bathrooms: template.bathrooms,
+      floors: template.floors,
       style: 'Warm modern', site: 'No preference', household: 'No preference',
-      spaces: id === 'courtyard' ? 'Home office and courtyard garden' : 'No preference',
+      spaces: template.spaces,
       materials: 'Natural oak and warm plaster', budget: 'No preference', lighting: 'Natural daylight', interiorViews: 'Living room, bedrooms and exterior',
     };
     edit();
