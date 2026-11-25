@@ -4,7 +4,8 @@ import { createSelectionEditor } from './selection-editor.ts';
 import { previewEditWithAi, previewLocalEdit } from '../project/preview.ts';
 import { track } from '../alpha/telemetry.ts';
 import { shareHome } from '../alpha/projects.ts';
-import { exportPlan, download } from '../alpha/exporters.ts';
+import { exportPlan, download, materialsPdf } from '../alpha/exporters.ts';
+import { materialsCsv, materialsSchedule } from '../project/materials.ts';
 import { saveHome, saveLocation } from '../alpha/projects.ts';
 import { errorMessage, labelControls, reportEditorError } from './ui.ts';
 import '@fontsource-variable/inter';
@@ -104,6 +105,8 @@ export function initEditor() {
 
   for (const format of ['png','pdf'] as const) document.getElementById(`export-${format}`)?.addEventListener('click',()=>{ track('export_clicked',{format}); void exportPlan(engine.getSnapshot(),format).catch(e=>showStatus(errorMessage(e),'error')); });
   document.getElementById('export-3d')?.addEventListener('click',()=>{track('export_clicked',{format:'3d'});if(!canvas3d){showStatus('3D is unavailable in this browser.','error');return;}void canvas3d.screenshot().then(blob=>download(blob,'mopple-3d.png')).catch(e=>showStatus(errorMessage(e),'error'));});
+  document.getElementById('export-materials-csv')?.addEventListener('click',()=>{track('export_clicked',{format:'materials-csv'});const blob=new Blob([materialsCsv(materialsSchedule(engine.getSnapshot()))],{type:'text/csv;charset=utf-8'});download(blob,'mopple-materials.csv');});
+  document.getElementById('export-materials-pdf')?.addEventListener('click',()=>{track('export_clicked',{format:'materials-pdf'});try{download(materialsPdf(engine.getSnapshot()),'mopple-materials.pdf');}catch(e){showStatus(errorMessage(e),'error');}});
   document.getElementById('share-home')?.addEventListener('click',()=>{void shareHome(engine.getSnapshot()).then(async url=>{track('home_shared');try{await navigator.clipboard.writeText(url);showStatus('Read-only share link copied.','success');}catch{const link=document.createElement('a');link.href=url;link.textContent='Open your share link';link.target='_blank';link.rel='noopener';document.querySelector('.workspace-tools')?.append(link);showStatus('Share link ready. Open it to copy the address.','success');}}).catch(e=>showStatus(errorMessage(e),'error'));});
   const architectureControls = canvas3d ? createArchitectureControls(pane3D, engine, canvas3d, entity => handleSelect(entity)) : undefined;
   architectureControls?.setView('cutaway');

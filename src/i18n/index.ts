@@ -66,7 +66,16 @@ Object.assign(messages,{
  'Ready for your':['Готовы к','Keyingi'],
  'next client?':['следующему клиенту?','mijozga tayyormisiz?'],
  'Open the editor, shape the design, and send clients a link to explore.':['Откройте редактор, создайте проект и отправьте клиентам ссылку для просмотра.','Tahrirchini oching, loyihani yarating va mijozlarga ko‘rish uchun havola yuboring.'],
- 'Show clients the home before it exists.':['Покажите клиентам дом до того, как он построен.','Mijozlarga uy hali qurilmagan paytda ko‘rsating.']
+ 'Show clients the home before it exists.':['Покажите клиентам дом до того, как он построен.','Mijozlarga uy hali qurilmagan paytda ko‘rsating.'],
+ 'Materials list':['Ведомость материалов','Materiallar ro‘yxati'],
+ 'Generated from the current project · not construction documents.':['Сформировано из текущего проекта · не строительная документация.','Joriy loyihadan yaratildi · qurilish hujjati emas.'],
+ 'Area':['Площадь','Maydon'],
+ 'Finishes':['Отделка','Pardozlar'],
+ 'Used in':['Использований','Ishlatilishlar'],
+ 'Qty':['Кол-во','Soni'],
+ 'Size (m)':['Размер (м)','O‘lcham (m)'],
+ 'Materials CSV':['Материалы CSV','Materiallar CSV'],
+ 'Materials PDF':['Материалы PDF','Materiallar PDF']
 });
 Object.assign(messages,{
  'Sending…':['Отправляем…','Yuborilmoqda…'],
