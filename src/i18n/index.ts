@@ -75,7 +75,8 @@ Object.assign(messages,{
  'Qty':['Кол-во','Soni'],
  'Size (m)':['Размер (м)','O‘lcham (m)'],
  'Materials CSV':['Материалы CSV','Materiallar CSV'],
- 'Materials PDF':['Материалы PDF','Materiallar PDF']
+ 'Materials PDF':['Материалы PDF','Materiallar PDF'],
+ 'Export GLB':['Экспорт GLB','GLB eksport']
 });
 Object.assign(messages,{
  'Sending…':['Отправляем…','Yuborilmoqda…'],
