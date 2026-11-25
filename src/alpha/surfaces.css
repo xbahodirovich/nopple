@@ -59,5 +59,6 @@ body.product-page { user-select:text; line-height:1.6; }
 }
 
 #studio-brand { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; font-weight: 500; max-width: 40vw; }
+#studio-brand[hidden] { display: none; }
 #studio-brand img { width: 28px; height: 28px; object-fit: contain; background: #fff; border-radius: 6px; padding: 2px; }
 @media(max-width:640px){ #studio-brand { display: none; } }

@@ -42,6 +42,17 @@ export type StudioProfile = z.infer<typeof studioProfileSchema>;
 /** Offline share payload: the project alone (exactly as before), or wrapped with studio branding. */
 export const sharePayloadSchema = z.strictObject({ model: projectSchema, studio: studioProfileSchema.optional() });
 
+/** Compressed links (gzip + base64url) mark themselves with this version. */
+export const SHARE_VERSION = 2;
+/** Decompressed payload cap: legit payloads stay under shareHome's 100 KB JSON bound. */
+export const SHARE_DECOMPRESSED_CAP = 128 * 1024;
+
+const compressedShareSchema = z.strictObject({
+  version: z.literal(SHARE_VERSION),
+  model: projectSchema,
+  studio: studioProfileSchema.optional(),
+});
+
 export function encodeSharePayload(model: MoppleProject, studio: StudioProfile | null): string {
   if (!studio) return JSON.stringify(model);
   return JSON.stringify({ model, studio });
@@ -49,9 +60,11 @@ export function encodeSharePayload(model: MoppleProject, studio: StudioProfile |
 
 export type DecodedShare = { model: unknown; studio: StudioProfile | null };
 
-/** Old links carry the bare project and keep opening exactly as before, without studio. */
+/** Old links carry the bare project (or the unversioned wrapper) and keep opening exactly as before. */
 export function decodeSharePayload(json: string): DecodedShare {
   const parsed: unknown = JSON.parse(json);
+  const compressed = compressedShareSchema.safeParse(parsed);
+  if (compressed.success) return { model: compressed.data.model, studio: compressed.data.studio ?? null };
   const wrapper = sharePayloadSchema.safeParse(parsed);
   if (wrapper.success) return { model: wrapper.data.model, studio: wrapper.data.studio ?? null };
   // Malformed studio branding must not block the home: drop the branding, keep the model.
@@ -59,6 +72,50 @@ export function decodeSharePayload(json: string): DecodedShare {
     return { model: (parsed as { model: unknown }).model, studio: null };
   }
   return { model: parsed, studio: null };
+}
+
+export function gzipBytes(bytes: Uint8Array): Promise<Uint8Array> {
+  const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new CompressionStream('gzip'));
+  return new Response(stream).arrayBuffer().then(buffer => new Uint8Array(buffer));
+}
+
+export function base64UrlEncode(bytes: Uint8Array): string {
+  return btoa(Array.from(bytes, b => String.fromCharCode(b)).join('')).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+}
+
+export function base64UrlDecode(text: string): Uint8Array {
+  if (!/^[A-Za-z0-9_-]*={0,2}$/.test(text)) throw new Error('Invalid share link.');
+  const padded = text.replaceAll('-', '+').replaceAll('_', '/');
+  return Uint8Array.from(atob(padded + '='.repeat((4 - (padded.length % 4)) % 4)), c => c.charCodeAt(0));
+}
+
+/** Versioned share JSON: compressed links carry the studio name only, never the logo. */
+export async function compressSharePayload(model: MoppleProject, studio: StudioProfile | null): Promise<Uint8Array> {
+  const payload = studio ? { version: SHARE_VERSION, model, studio } : { version: SHARE_VERSION, model };
+  return gzipBytes(new TextEncoder().encode(JSON.stringify(payload)));
+}
+
+/** Streaming decompression with a hard size cap so gzip bombs fail fast. */
+export async function gunzipShare(bytes: Uint8Array, cap = SHARE_DECOMPRESSED_CAP): Promise<Uint8Array> {
+  const reader = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream('gzip')).getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > cap) { void reader.cancel().catch(() => {}); throw new Error('Invalid share link.'); }
+      chunks.push(value);
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Invalid share link.') throw error;
+    throw new Error('Invalid share link.'); // decompression failures (bad gzip, checksum) must not leak internals
+  }
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.byteLength; }
+  return result;
 }
 
 export function loadStudioProfile(): StudioProfile | null {

@@ -85,6 +85,7 @@ Object.assign(messages,{
  'Logo must be PNG, JPEG or WebP.':['Логотип должен быть в формате PNG, JPEG или WebP.','Logotip faqat PNG, JPEG yoki WebP formatida bo‘lishi kerak.'],
  'Logo is too large after downscaling. Use a simpler image.':['Логотип слишком велик после уменьшения. Используйте более простой рисунок.','Kichiklashtirilgandan keyin logotip hali juda katta. Soddaroq rasm tanlang.'],
  'Enter a studio name.':['Введите название студии.','Studiya nomini kiriting.'],
+ 'The logo will not appear in offline share links.':['Логотип не появится в офлайн-ссылках.','Logotip oflayn havolalarda ko‘rinmaydi.'],
  'Compact · 50 m²':['Компакт · 50 м²','Ixcham · 50 m²'],
  '2-bedroom apartment · 68 m²':['2-комнатная квартира · 68 м²','2 yotoqxona kvartira · 68 m²'],
  'Small house · 110 m²':['Небольшой дом · 110 м²','Kichik uy · 110 m²'],

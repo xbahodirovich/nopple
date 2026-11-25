@@ -31,18 +31,19 @@ export function initStudioBranding(): void {
   if (!panel) return;
   const name = panel.querySelector<HTMLInputElement>('#studio-name')!, file = panel.querySelector<HTMLInputElement>('#studio-logo')!;
   const preview = panel.querySelector<HTMLImageElement>('#studio-logo-preview')!, status = panel.querySelector<HTMLElement>('#studio-status')!;
+  const hint = panel.querySelector<HTMLElement>('#studio-logo-hint')!;
   const save = panel.querySelector<HTMLButtonElement>('#studio-save')!;
   const existing = loadStudioProfile();
   let logo: string | undefined;
   if (existing) {
     name.value = existing.name;
-    if (existing.logo) { logo = existing.logo; preview.src = existing.logo; preview.hidden = false; }
+    if (existing.logo) { logo = existing.logo; preview.src = existing.logo; preview.hidden = false; hint.hidden = false; }
   }
   file.addEventListener('change', () => { void (async () => {
     const selected = file.files?.[0];
     if (!selected) return;
-    try { logo = await logoDataUrl(selected); preview.src = logo; preview.hidden = false; status.textContent = ''; }
-    catch (error) { logo = undefined; preview.hidden = true; status.textContent = error instanceof Error ? error.message : 'Logo could not be used.'; }
+    try { logo = await logoDataUrl(selected); preview.src = logo; preview.hidden = false; hint.hidden = false; status.textContent = ''; }
+    catch (error) { logo = undefined; preview.hidden = true; hint.hidden = true; status.textContent = error instanceof Error ? error.message : 'Logo could not be used.'; }
   })(); });
   save.addEventListener('click', () => {
     const value = name.value.trim();

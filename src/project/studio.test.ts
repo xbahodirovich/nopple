@@ -5,6 +5,7 @@ import { parseProject } from './validation.ts';
 import {
   detectImageType, encodeSharePayload, decodeSharePayload, loadStudioProfile, saveStudioProfile,
   sharePayloadSchema, studioProfileSchema, STUDIO_NAME_MAX,
+  SHARE_VERSION, base64UrlDecode, base64UrlEncode, compressSharePayload, gzipBytes, gunzipShare,
 } from './studio.ts';
 import type { MoppleProject } from './schema.ts';
 
@@ -112,4 +113,43 @@ test('studio profile storage round-trips and rejects corrupt data', () => {
     store.set('nopple_studio_profile', JSON.stringify({ name: 42 }));
     assert.equal(loadStudioProfile(), null);
   } finally { stub.localStorage = original; }
+});
+
+test('compressed share links round-trip with a version marker and name-only studio', async () => {
+  const model = fixture();
+  const bytes = await compressSharePayload(model, { name: 'Bog‘cha Studio' });
+  const json = new TextDecoder().decode(await gunzipShare(bytes));
+  const parsed = JSON.parse(json) as { version?: number; studio?: { name?: string; logo?: string } };
+  assert.equal(parsed.version, SHARE_VERSION);
+  assert.equal(parsed.studio?.name, 'Bog‘cha Studio');
+  assert.equal(parsed.studio?.logo, undefined);
+  const url = base64UrlEncode(bytes);
+  assert.ok(!url.includes('+') && !url.includes('/') && !url.includes('='), 'base64url must be URL-safe');
+  const decoded = decodeSharePayload(new TextDecoder().decode(await gunzipShare(base64UrlDecode(url))));
+  assert.deepEqual(decoded.model, model);
+  assert.deepEqual(decoded.studio, { name: 'Bog‘cha Studio' });
+});
+
+test('compressed links without studio decode to the bare model', async () => {
+  const model = fixture();
+  const decoded = decodeSharePayload(new TextDecoder().decode(await gunzipShare(await compressSharePayload(model, null))));
+  assert.deepEqual(decoded.model, model);
+  assert.equal(decoded.studio, null);
+});
+
+test('corrupt compressed input fails with clear errors, not crashes', async () => {
+  assert.throws(() => base64UrlDecode('not valid base64url!'), /Invalid share link/);
+  const notGzip = base64UrlDecode('SGVsbG8='); // decodes fine, but is not gzip
+  await assert.rejects(() => gunzipShare(notGzip), /Invalid share link/);
+  await assert.rejects(() => gunzipShare(new Uint8Array([1, 2, 3])), /Invalid share link/);
+});
+
+test('decompression bombs are capped', async () => {
+  const bomb = await gzipBytes(new Uint8Array(2 * 1024 * 1024)); // 2 MB of zeros compresses to a few KB
+  assert.ok(bomb.length < 30000, 'test fixture should be small on the wire');
+  await assert.rejects(() => gunzipShare(bomb, 128 * 1024), /Invalid share link/);
+  // Legit payloads under the cap still decompress.
+  const legit = await gzipBytes(new TextEncoder().encode('x'.repeat(100 * 1024)));
+  const out = await gunzipShare(legit);
+  assert.equal(out.length, 100 * 1024);
 });
