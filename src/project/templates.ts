@@ -13,9 +13,9 @@ export interface HomeTemplate {
 
 export const homeTemplates: HomeTemplate[] = [
   {
-    id: 'studio', label: 'Studio · 50 m²',
-    request: 'A 50 m² studio home with an open living room and kitchen, a sleeping room and one bathroom',
-    area: 50, bedrooms: 1, bathrooms: 1, floors: 1, spaces: 'Open studio living and kitchen',
+    id: 'compact-50', label: 'Compact · 50 m²',
+    request: 'A compact 50 m² home with an open living room and kitchen, a sleeping room and one bathroom',
+    area: 50, bedrooms: 1, bathrooms: 1, floors: 1, spaces: 'Open living room and kitchen',
   },
   {
     id: 'apartment-2', label: '2-bedroom apartment · 68 m²',

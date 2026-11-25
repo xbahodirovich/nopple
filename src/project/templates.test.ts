@@ -6,7 +6,7 @@ import { generateArchitecturalLayout } from './architecture-generator.ts';
 import { homeTemplates } from './templates.ts';
 import { previewLocalEdit, applyDesignPreview } from './preview.ts';
 
-const TEMPLATE_IDS = ['studio', 'apartment-2', 'house-small'];
+const TEMPLATE_IDS = ['compact-50', 'apartment-2', 'house-small'];
 
 function templateProject(id: string) {
   const template = homeTemplates.find(entry => entry.id === id)!;
