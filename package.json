@@ -10,6 +10,7 @@
     "preview": "vite preview --host",
     "test": "node --experimental-strip-types --test src/project/*.test.ts src/editor/*.test.ts server/*.test.ts",
     "test:browser": "node scripts/check-browser.mjs",
+    "test:browser:all": "node scripts/run-browser-checks.mjs",
     "test:editor": "node scripts/check-editor.mjs",
     "lint": "tsc --noEmit",
     "test:prompts": "node --experimental-strip-types scripts/test-prompts.mjs",
