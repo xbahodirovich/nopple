@@ -179,4 +179,4 @@ input,textarea { caret-color:var(--mint); }
 .selection-input .btn { font-size:12px; }
 #selection-error { color:#ffb5a8; font-size:12px; line-height:1.5; margin-top:8px; }
 #selection-error:empty { display:none; }
-@media(max-width:760px) { .selection-editor { bottom:140px; padding:12px; } .selection-input { flex-direction:column; } .selection-input textarea { font-size:16px; } }
+@media(max-width:760px) { .selection-editor { bottom:140px; padding:12px; } .selection-input { flex-direction:column; } .selection-input textarea { font-size:16px; } .architecture-controls:has(.measurement-schedule:not([open])) { z-index:95; } }

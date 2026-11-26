@@ -114,6 +114,11 @@ export function initEditor() {
   const architectureControls = canvas3d ? createArchitectureControls(pane3D, engine, canvas3d, entity => handleSelect(entity)) : undefined;
   architectureControls?.setView('cutaway');
   if (architectureControls) cleanups.push(() => architectureControls.destroy());
+  // Opening the measurement schedule dismisses the floating edit prompt so the
+  // schedule is fully usable on small screens; the selection itself is kept.
+  pane3D.querySelector<HTMLDetailsElement>('details.measurement-schedule')?.addEventListener('toggle', event => {
+    if ((event.target as HTMLDetailsElement).open) selectionEditor.setSelection(null);
+  });
 
   // 2. Instantiate Panels
   const layersPanel = new LayersPanel(layersContainer, {
