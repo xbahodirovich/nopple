@@ -20,7 +20,13 @@ try {
   await page.goto(`http://127.0.0.1:${port}/advanced`, { waitUntil: 'networkidle' });
   assert.equal(await page.locator('canvas').count(), 2);
   assert.equal(await page.locator('.layer-item[data-type="room"]').count(), 4);
-  assert.equal(await page.evaluate(async () => (await fetch('/api/ai/operations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status), 401);
+  // Hosted AI fails closed: without a configured server the endpoint is 503 and explains why.
+  const hosted = await page.evaluate(async () => {
+    const response = await fetch('/api/ai/operations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    return { status: response.status, error: (await response.json().catch(() => ({}))).error };
+  });
+  assert.equal(hosted.status, 503, 'the AI endpoint must fail closed when hosted AI is unavailable');
+  assert.match(String(hosted.error), /disabled|unavailable/i, 'the 503 explains that hosted AI is off');
 
   // Scale is committed, restored by undo, and remains visible after selection changes.
   await page.locator('.layer-item[data-id="object_sofa"]').click();
