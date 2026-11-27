@@ -17,3 +17,21 @@ body{background:#f5eee4;color:#392b24}.page-heading,.page-heading a{color:#392b2
 @media(max-width:640px){.stage-header button{min-height:44px}.page-heading{gap:8px}.page-heading>a{font-size:25px}.page-heading .language-control{margin-left:auto}.page-heading .language-control select{max-width:120px}.editor-measurements input,.editor-measurements select{font-size:16px}}
 
 @media(max-width:360px){.brief dl{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px 14px;width:100%}.brief dl div{min-width:0;display:grid;gap:2px;align-content:start}.brief dt{font-size:11px}.brief dd{font-size:12px;white-space:nowrap}}
+
+@media(max-width:1024px){
+ body{padding-inline:max(16px,env(safe-area-inset-left)) max(16px,env(safe-area-inset-right));padding-bottom:max(18px,env(safe-area-inset-bottom))}
+ button,.stage-header button,.view-tabs button,.level-tabs button,.plan-style-tabs button,#undo,.advanced-link,.measure-table button,.measure-filters button,.measure-toggles label{min-height:44px}
+ .page-heading>a,.stage-header .wordmark{min-height:44px;display:inline-flex;align-items:center}
+ .advanced-link{display:flex;align-items:center;justify-content:space-between}
+ #reset-camera{min-width:44px;min-height:44px}
+ input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea,#target-picker,.measure-filters select,.measure-filters input,.editor-measurements input,.editor-measurements select,#edit-form textarea,.selection-input textarea{font-size:16px;min-height:44px}
+ #target-picker,.measure-filters select{height:44px;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%23725f52' stroke-width='1.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;background-size:14px;padding-right:28px}
+ .plan-style-tabs{top:64px}
+ #architecture-plan,#furnished-plan{inset:112px 5px 12px}
+}
+@media(max-width:600px){
+ body{padding-inline:max(10px,env(safe-area-inset-left)) max(10px,env(safe-area-inset-right));padding-bottom:max(12px,env(safe-area-inset-bottom))}
+ .plan-style-tabs{top:111px}
+ #architecture-plan,#furnished-plan{inset:160px 8px 8px}
+ .selection-editor{bottom:max(12px,env(safe-area-inset-bottom))}
+}
