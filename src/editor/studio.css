@@ -94,6 +94,13 @@ input,textarea { caret-color:var(--mint); }
   .nav-actions .icon-button { width:30px; }
   .workspace-tools { padding-inline:12px; gap:8px; }
   .project-title-input { max-width:140px; }
+  .viewport-hud { right:8px; top:8px; max-width:calc(100% - 16px); }
+}
+@media(max-width:1024px) and (min-width:761px) {
+  .studio-sidebar { width:205px; }
+  .panel-properties { width:200px; }
+  .viewport-hud { gap:2px; padding:3px; }
+  .architecture-controls { top:64px; }
 }
 @media(max-width:760px) {
   .top-bar { height:auto; min-height:0; flex-wrap:wrap; padding:10px 12px; gap:8px; }
@@ -142,6 +149,7 @@ input,textarea { caret-color:var(--mint); }
 }
 
 /* The scene dock shares a single surface and keeps the model in view. */
+.canvas-pane { container-type:inline-size; }
 .architecture-controls { max-width:calc(100% - 24px); }
 .architecture-toolbar { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,.85fr) auto; align-items:center; gap:0; width:min(470px,100%); padding:8px; border-color:#34463c; border-radius:12px; box-shadow:0 8px 24px #0005; background:#121c17; }
 .architecture-toolbar .scene-control { gap:4px; padding:4px 10px; min-width:0; }
@@ -157,6 +165,16 @@ input,textarea { caret-color:var(--mint); }
 .architecture-controls .measurement-schedule { width:min(470px,100%); border:0; background:transparent; margin-top:6px; }
 .architecture-controls .measurement-schedule>summary { padding:7px 12px; border-radius:7px; color:#b1c1b7; background:#101a14; font-size:11px; }
 .architecture-controls .measurement-schedule[open] { background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:10px; }
+@media(min-width:761px) {
+  @container(max-width:350px) {
+    .architecture-controls { left:8px; right:8px; max-width:calc(100% - 16px); }
+    .architecture-toolbar { grid-template-columns:minmax(0,1fr) 44px; gap:4px 6px; padding:6px; }
+    .architecture-toolbar .scene-control { grid-column:1; padding:2px 6px; }
+    .scene-control+ .scene-control { border-left:0; border-top:1px solid #2b3b31; padding-top:6px; }
+    .architecture-toolbar .dimension-toggle { grid-column:2; grid-row:1 / span 2; margin:0; padding:10px; justify-content:center; align-self:center; }
+    .dimension-toggle>span { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+  }
+}
 @media(max-width:760px) {
   .architecture-toolbar { grid-template-columns:minmax(0,1fr) minmax(0,1fr) 44px; padding:6px; }
   .architecture-toolbar .scene-control { padding:3px 8px; }
