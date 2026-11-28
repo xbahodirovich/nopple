@@ -1,5 +1,9 @@
 import { validateProject } from '../project/validation.ts';
 import type { MoppleProject } from '../project/schema.ts';
+import {
+  base64UrlDecode, base64UrlEncode, compressSharePayload, decodeSharePayload, encodeSharePayload,
+  gunzipShare, loadStudioProfile, type StudioProfile,
+} from '../project/studio.ts';
 export interface SavedHome { id: string; name: string; model: MoppleProject; versions: MoppleProject[] }
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -83,15 +87,35 @@ export async function shareHome(model: MoppleProject): Promise<string> {
   const rows = await rest(`projects?id=eq.${encodeURIComponent(model.project.id)}`,{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({shared:true})});
   return `${location.origin}/share?id=${rows[0].share_id}`;
  }
- const bytes = new TextEncoder().encode(JSON.stringify(model));
+ const studio = loadStudioProfile();
+ if (typeof CompressionStream !== 'undefined') {
+  // Compressed links carry the studio name only — the logo needs stored shares.
+  const bytes = await compressSharePayload(model, studio ? { name: studio.name } : null);
+  const link = `${location.origin}/share#gz=${base64UrlEncode(bytes)}`;
+  if (link.length > 150000) throw new Error('This home is too large for a portable link. Sign in for cloud sharing.');
+  return link;
+ }
+ const payload = encodeSharePayload(model, studio);
+ const bytes = new TextEncoder().encode(payload);
  if (bytes.length > 100000) throw new Error('This home is too large for a portable link. Sign in for cloud sharing.');
  const encoded = btoa(Array.from(bytes,b => String.fromCharCode(b)).join(''));
  return `${location.origin}/share#home=${encodeURIComponent(encoded)}`;
 }
-export async function loadShared(): Promise<MoppleProject> {
+export async function loadShared(): Promise<{ model: MoppleProject; studio: StudioProfile | null }> {
  const id = new URLSearchParams(location.search).get('id');
- if (id && cloudConfigured) { const rows = await rest(`rpc/read_shared`,{method:'POST',body:JSON.stringify({share_token:id})},true); if (!rows.length) throw new Error('This share is unavailable.'); return validateProject(rows[0].model); }
- const encoded = new URLSearchParams(location.hash.slice(1)).get('home');
+ if (id && cloudConfigured) { const rows = await rest(`rpc/read_shared`,{method:'POST',body:JSON.stringify({share_token:id})},true); if (!rows.length) throw new Error('This share is unavailable.'); return { model: validateProject(rows[0].model), studio: null }; }
+ const hash = new URLSearchParams(location.hash.slice(1));
+ const compressed = hash.get('gz');
+ if (compressed) {
+  if (compressed.length > 150000) throw new Error('Invalid share link.');
+  let json: string;
+  try { json = new TextDecoder().decode(await gunzipShare(base64UrlDecode(compressed))); }
+  catch { throw new Error('Invalid share link.'); }
+  const decoded = decodeSharePayload(json);
+  return { model: validateProject(decoded.model), studio: decoded.studio };
+ }
+ const encoded = hash.get('home');
  if (!encoded || encoded.length > 150000) throw new Error('Invalid share link.');
- return validateProject(JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(encoded),c=>c.charCodeAt(0)))));
+ const decoded = decodeSharePayload(new TextDecoder().decode(Uint8Array.from(atob(encoded),c=>c.charCodeAt(0))));
+ return { model: validateProject(decoded.model), studio: decoded.studio };
 }

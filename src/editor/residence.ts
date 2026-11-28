@@ -1,5 +1,5 @@
 import {createMeasurementPanel} from './measurement-panel.ts';
-import {initLanguage,normalizeLocalPrompt} from '../i18n/index.ts';
+import {initLanguage,normalizeLocalPrompt,t} from '../i18n/index.ts';
 import '@fontsource-variable/inter';
 import './residence.css';
 import './courtyard-theme.css';
@@ -12,7 +12,9 @@ import {Canvas3D} from './canvas3d.ts';
 import type {SelectedEntity} from './canvas2d.ts';
 import {finishOptions,finishVariant} from '../project/finishes.ts';
 import {previewSelectionEdit} from '../project/selection-preview.ts';
-import {applyDesignPreview,type DesignPreview} from '../project/preview.ts';
+import {applyDesignPreview,previewEditWithAi,type DesignPreview} from '../project/preview.ts';
+import {aiFallbackClientEnabled} from './ai.ts';
+import {aiStateMessage,aiThinkingLabel,aiCancelLabel} from './ai-status.ts';
 import {polygonArea,roomPolygon} from '../project/geometry.ts';
 import {shareHome,localHomes,saveHome} from '../alpha/projects.ts';
 import {planCanvas} from '../alpha/exporters.ts';
@@ -90,7 +92,33 @@ document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach(button=>butt
 document.querySelectorAll<HTMLButtonElement>('[data-floor]').forEach(button=>button.onclick=()=>{model.setFloor(button.dataset.floor||null);plan.setFloor(button.dataset.floor||engine.getSnapshot().building.floors[0].id);architecturePlan.setFloor(button.dataset.floor||engine.getSnapshot().building.floors[0].id);model.setViewPreset('cutaway');plan.setViewPreset('top');document.querySelectorAll('[data-floor]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));});
 document.querySelectorAll<HTMLButtonElement>('[data-property]').forEach(button=>button.onclick=()=>{propertyTab=button.dataset.property!;document.querySelectorAll('[data-property]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));updateProperties();});
 $('#reset-camera').onclick=()=>model.setViewPreset('cutaway');
-$('#edit-form').onsubmit=event=>{event.preventDefault();try{const request=$<HTMLTextAreaElement>('#request').value;const preview=previewSelectionEdit(engine,selection,normalizeLocalPrompt(request));preview.title=request;showPreview(preview);$('#edit-status').textContent='';}catch(error){showError(error);}};
+const editSubmit=$<HTMLButtonElement>('#edit-form button[type=submit]');
+const editSubmitHtml=editSubmit.innerHTML;
+let editAbort:AbortController|null=null;
+$('#edit-form').onsubmit=event=>{
+ event.preventDefault();
+ if(editAbort){editAbort.abort();return;}
+ const request=$<HTMLTextAreaElement>('#request').value,status=$('#edit-status');
+ try{
+  if(!aiFallbackClientEnabled()){
+   const preview=previewSelectionEdit(engine,selection,normalizeLocalPrompt(request));
+   preview.title=request;showPreview(preview);status.textContent='';
+   return;
+  }
+ }catch(error){showError(error);return;}
+ // Hosted fallback: local rules first; only an unsupported command reaches the AI service.
+ editAbort=new AbortController();
+ editSubmit.textContent=aiCancelLabel();
+ status.textContent=aiThinkingLabel();status.dataset.aiThinking='true';
+ void (async()=>{
+  try{
+   const preview=await previewEditWithAi(engine,normalizeLocalPrompt(request),selection,{signal:editAbort?.signal});
+   preview.title=request;showPreview(preview);status.textContent='';
+  }catch(error){showError(aiStateMessage(error));}
+  finally{editAbort=null;editSubmit.innerHTML=editSubmitHtml;delete status.dataset.aiThinking;}
+ })();
+};
+if(aiFallbackClientEnabled())$('.local-note').textContent='Local edits · AI fallback available';
 for(const id of ['close-review','discard'])$(`#${id}`).onclick=()=>{pending=undefined;$<HTMLDialogElement>('#review').close();};
 $('#apply').onclick=()=>{try{if(pending)applyDesignPreview(engine,pending);pending=undefined;$<HTMLDialogElement>('#review').close();$('#edit-status').textContent='Change applied. You can undo it.';}catch(error){showError(error);}};
 document.querySelectorAll<HTMLButtonElement>('[data-finish]').forEach(button=>button.onclick=()=>{const id=button.dataset.finish as typeof finishOptions[number]['id'];engine.importProject(JSON.stringify(finishVariant(engine.getSnapshot(),id)));document.querySelectorAll('[data-finish]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));});
@@ -105,7 +133,7 @@ void renderCards();
 
 $('#target-picker').onchange=()=>{const [type,id]=$<HTMLSelectElement>('#target-picker').value.split(':');select({type:type as SelectedEntity['type'],id});};
 document.querySelectorAll<HTMLButtonElement>('[data-plan-style]').forEach(button=>button.onclick=()=>{const furnished=button.dataset.planStyle==='furnished';$('#architecture-plan').hidden=furnished;$('#furnished-plan').hidden=!furnished;document.querySelectorAll('[data-plan-style]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));if(furnished)requestAnimationFrame(()=>plan.setViewPreset('top'));});
-const settings=document.createElement('dialog');settings.id='ai-settings';settings.innerHTML=`<header><h2>Connect AI when you’re ready.</h2><button type="button" id="close-ai">Close</button></header><p>Nopple currently uses local editing. The existing AI service supports NVIDIA API keys.</p><h3>Local development</h3><p>Create <code>.env.local</code> in the project root and add your key:</p><pre>NVIDIA_API_KEY=your_nvidia_key</pre><p>Restart the development server after changing environment variables.</p><h3>Hosted website</h3><p>Add <code>NVIDIA_API_KEY</code> in your hosting provider’s environment variables, then redeploy. Keep this server-side; do not use a VITE_ prefix for the secret.</p><p>Adding the key configures the service. Editor remains in local mode until its AI editing integration is enabled. A key does not generate photorealistic 3D assets.</p>`;document.body.append(settings);$('#ai-setup').onclick=()=>settings.showModal();$('#close-ai').onclick=()=>settings.close();
+const settings=document.createElement('dialog');settings.id='ai-settings';settings.innerHTML=`<header><h2>AI on this site</h2><button type="button" id="close-ai">Close</button></header><p>Local design commands always run in your browser.</p><p>When hosted AI is enabled on the server, a command the local rules cannot handle is sent to an AI service — only your text and the selected room. You never enter or send an API key from the browser.</p><p>Server operators configure hosted AI with NVIDIA_API_KEY and AI_FALLBACK_ENABLED. The free NVIDIA tier is intended for development only.</p>`;document.body.append(settings);$('#ai-setup').onclick=()=>settings.showModal();$('#close-ai').onclick=()=>settings.close();
 
 // Carry the landing-page exploration into the editable project.
 const entry=new URLSearchParams(location.search),entryView=entry.get('view');

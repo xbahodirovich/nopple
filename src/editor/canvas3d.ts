@@ -7,6 +7,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import type { MoppleProjectEngine } from '../project/engine.ts';
 import { distance, roomPolygon } from '../project/geometry.ts';
 import type { MoppleInteriorObject, MoppleLight, MoppleMaterial, MoppleProject, MoppleWall } from '../project/schema.ts';
@@ -96,6 +97,19 @@ export class Canvas3D {
   screenshot(): Promise<Blob> {
     this.composer.render();
     return new Promise((resolve,reject)=>this.renderer.domElement.toBlob(b=>b?resolve(b):reject(new Error('3D screenshot failed'))));
+  }
+
+  /** Binary glTF of the home: building and furniture groups only — no sky, sun rig or selection helpers. */
+  exportGlb(): Promise<Blob> {
+    const exporter = new GLTFExporter();
+    const contents: THREE.Object3D[] = [this.buildingGroup, this.furnitureGroup].filter(group => group.children.length > 0);
+    if (!contents.length) return Promise.reject(new Error('Nothing to export yet. Add rooms or furniture first.'));
+    return new Promise((resolve, reject) => exporter.parse(
+      contents,
+      gltf => resolve(new Blob([gltf as ArrayBuffer], { type: 'model/gltf-binary' })),
+      error => reject(error instanceof Error ? error : new Error('GLB export failed')),
+      { binary: true },
+    ));
   }
 
   constructor(container: HTMLElement, options: Canvas3DOptions) {

@@ -9,7 +9,7 @@ export interface PropertyPanelOptions {
   onExport: () => void;
   onImport: () => void;
   onDeleteSelected: () => void;
-  onOpenApiKeyModal: () => void;
+  onOpenAiSettings: () => void;
 }
 
 export class PropertyPanel {
@@ -20,7 +20,7 @@ export class PropertyPanel {
   private onExport: () => void;
   private onImport: () => void;
   private onDeleteSelected: () => void;
-  private onOpenApiKeyModal: () => void;
+  private onOpenAiSettings: () => void;
   private unsubscribe: () => void;
 
   constructor(container: HTMLElement, options: PropertyPanelOptions) {
@@ -30,7 +30,7 @@ export class PropertyPanel {
     this.onExport = options.onExport;
     this.onImport = options.onImport;
     this.onDeleteSelected = options.onDeleteSelected;
-    this.onOpenApiKeyModal = options.onOpenApiKeyModal;
+    this.onOpenAiSettings = options.onOpenAiSettings;
 
     this.render();
 
@@ -138,7 +138,7 @@ export class PropertyPanel {
         <div class="divider"></div>
 
         <div class="prop-section-title">Design workflow</div>
-        <button class="btn btn-secondary" id="btn-open-apikey">
+        <button class="btn btn-secondary" id="btn-open-ai-settings">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           About local previews
         </button>
@@ -148,7 +148,7 @@ export class PropertyPanel {
     this.container.querySelector('#prop-project-name')?.addEventListener('change', e => this.act(() => this.engine.renameProject((e.target as HTMLInputElement).value)));
     this.container.querySelector('#btn-export-project')?.addEventListener('click', this.onExport);
     this.container.querySelector('#btn-import-project')?.addEventListener('click', this.onImport);
-    this.container.querySelector('#btn-open-apikey')?.addEventListener('click', this.onOpenApiKeyModal);
+    this.container.querySelector('#btn-open-ai-settings')?.addEventListener('click', this.onOpenAiSettings);
   }
 
   private renderObjectProperties(obj: MoppleInteriorObject) {

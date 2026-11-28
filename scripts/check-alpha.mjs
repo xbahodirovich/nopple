@@ -29,6 +29,6 @@ try{
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:'.impeccable/review/alpha-mobile.png'});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
  await page.getByRole('button',{name:'Layers',exact:true}).click();assert.ok(await page.locator('#layers-container').isVisible());
  await page.emulateMedia({reducedMotion:'reduce'});await page.locator('#hud-solar-toggle').click();assert.ok(await page.locator('#solar-timelapse-btn').isDisabled());await page.keyboard.press('Escape');assert.equal(await page.locator('#hud-solar-toggle').getAttribute('aria-expanded'),'false');
- const nojs=await browser.newContext({javaScriptEnabled:false});const landing=await nojs.newPage();await landing.goto(base);assert.ok(await landing.getByRole('heading',{name:/Your space.*Your say/}).isVisible());assert.equal(await landing.getByRole('link',{name:'Make yourself at home'}).getAttribute('href'),'/editor');await nojs.close();
+ const nojs=await browser.newContext({javaScriptEnabled:false});const landing=await nojs.newPage();await landing.goto(base);assert.ok(await landing.getByRole('heading',{name:/The home, before it exists\./}).isVisible());assert.equal(await landing.locator('.opening-copy a.start-button').getAttribute('href'),'/editor');await nojs.close();
  assert.deepEqual(errors,[]);console.log('Alpha acceptance: multilingual generation, library, versions, exports, sharing, mobile and no-JS landing passed.');
 }finally{await browser?.close();await server.close();}

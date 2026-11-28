@@ -8,7 +8,7 @@ import { handleGenerationRequest } from './server/generation.ts';
 
 export default defineConfig(({mode}) => {
  const env=loadEnv(mode,process.cwd(),'');
- for (const key of ['NVIDIA_API_KEY','AI_PER_IP_PER_MINUTE','AI_DAILY_CAP','UPSTASH_REDIS_REST_URL','UPSTASH_REDIS_REST_TOKEN']) if(process.env[key]===undefined && env[key]) process.env[key]=env[key];
+ for (const key of ['NVIDIA_API_KEY','AI_FALLBACK_ENABLED','AI_PER_IP_PER_MINUTE','AI_DAILY_CAP','UPSTASH_REDIS_REST_URL','UPSTASH_REDIS_REST_TOKEN']) if(process.env[key]===undefined && env[key]) process.env[key]=env[key];
  return {
   plugins: [{
     name: 'mopple-ai-service',
@@ -18,6 +18,9 @@ export default defineConfig(({mode}) => {
       return html.replace(/(<meta property="og:image" content=")([^" ]+)(")/, (_match,start,path,end)=>start+new URL(path,origin).href+end).replace('</head>',`<meta property="og:url" content="${new URL(context.path,origin).href}"></head>`);
     } },
     configureServer(server) {
+      // `vite dev` serves the AI middleware locally; treat it as explicitly
+      // development so hosted quota rules do not apply to local design work.
+      if (!process.env.NODE_ENV) process.env.NODE_ENV = 'development';
       server.middlewares.use(cleanRoutes);
       server.middlewares.use('/api/ai/operations', (req, res) => { void handleAiRequest(req, res); });
       server.middlewares.use('/api/ai/generate', (req, res) => { void handleGenerationRequest(req, res); });

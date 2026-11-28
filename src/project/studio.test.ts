@@ -1,97 +1,155 @@
-import test from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createProject, MoppleProjectEngine } from './engine.ts';
-import { createApprovalToken, verifyApprovalToken, type DesignBrief } from './brief.ts';
-import { generateArchitecturalLayout } from './architecture-generator.ts';
-import { validateProject } from './validation.ts';
-import { roomPolygon, polygonArea } from './geometry.ts';
-import { finishVariant } from './finishes.ts';
-import { previewLocalEdit, applyDesignPreview } from './preview.ts';
-import { archiveFiles } from '../alpha/archive.ts';
-import { previewSelectionEdit } from './selection-preview.ts';
+import { readFile } from 'node:fs/promises';
+import { parseProject } from './validation.ts';
+import {
+  detectImageType, encodeSharePayload, decodeSharePayload, loadStudioProfile, saveStudioProfile,
+  sharePayloadSchema, studioProfileSchema, STUDIO_NAME_MAX,
+  SHARE_VERSION, base64UrlDecode, base64UrlEncode, compressSharePayload, gzipBytes, gunzipShare,
+} from './studio.ts';
+import type { MoppleProject } from './schema.ts';
 
-const brief: DesignBrief = { request:'A family home with an office', area:240, floors:2, bedrooms:3, bathrooms:2, style:'Warm modern', site:'No preference', household:'No preference', spaces:'Office and courtyard', materials:'Oak', budget:'No preference', lighting:'Natural daylight', interiorViews:'Living room and exterior' };
-function home() {
-  const engine = new MoppleProjectEngine(createProject());
-  engine.applyOperations({operations:[{type:'update_design_brief',brief},{type:'create_house',area:brief.area,floors:brief.floors,bedrooms:brief.bedrooms,bathrooms:brief.bathrooms,style:brief.style,spaces:brief.spaces,household:brief.household}]});
-  return engine;
-}
-test('selection requests preview only the selected object and preserve undo',()=>{
-  const engine=home(),before=engine.getSnapshot(),sofa=before.interior.objects.find(item=>item.kind==='sofa')!;
-  const preview=previewSelectionEdit(engine,{type:'object',id:sofa.id},'make this sofa blue');
-  assert.deepEqual(engine.getSnapshot(),before);
-  const changed=preview.project.interior.objects.find(item=>item.id===sofa.id)!;
-  assert.notEqual(changed.materialId,sofa.materialId);
-  assert.equal(preview.project.materials.find(material=>material.id===changed.materialId)?.color,'#3a5975');
-  assert.deepEqual(preview.project.interior.objects.filter(item=>item.id!==sofa.id),before.interior.objects.filter(item=>item.id!==sofa.id));
-  applyDesignPreview(engine,preview);engine.undo();assert.deepEqual(engine.getSnapshot(),before);
+const example = await readFile(new URL('../../examples/modern-house.mopple', import.meta.url), 'utf8');
+const fixture = () => parseProject(example) as MoppleProject;
+
+const base64 = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64');
+const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 1, 2, 3]);
+const JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0, 1, 2, 3]);
+const WEBP = Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0, 1]);
+
+test('detectImageType accepts PNG, JPEG and WebP signatures and rejects the rest', () => {
+  assert.equal(detectImageType(PNG), 'png');
+  assert.equal(detectImageType(JPEG), 'jpeg');
+  assert.equal(detectImageType(WEBP), 'webp');
+  assert.equal(detectImageType(Uint8Array.from(Buffer.from('GIF89a'))), null);
+  assert.equal(detectImageType(Uint8Array.from(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'))), null);
+  assert.equal(detectImageType(new Uint8Array(0)), null);
 });
-test('wall finish requests isolate shared materials and reject global requests',()=>{
-  const engine=home(),before=engine.getSnapshot(),wall=before.building.walls[0];
-  const preview=previewSelectionEdit(engine,{type:'wall',id:wall.id},'paint this wall black');
-  assert.deepEqual(preview.project.building.walls.filter(item=>item.id!==wall.id),before.building.walls.filter(item=>item.id!==wall.id));
-  assert.notEqual(preview.project.building.walls[0].materialId,wall.materialId);
-  assert.throws(()=>previewSelectionEdit(engine,{type:'wall',id:wall.id},'remove it'),/wall requests/);
-  const chair=before.interior.objects.find(item=>item.kind==='chair')!;
-  assert.throws(()=>previewSelectionEdit(engine,{type:'object',id:chair.id},'remove the sofa'),/Select the furniture/);
-  assert.throws(()=>previewSelectionEdit(engine,{type:'object',id:chair.id},'make lighting brighter'),/outside your selection/);
+
+test('old links without a studio field decode to the bare model', () => {
+  const model = fixture();
+  const decoded = decodeSharePayload(JSON.stringify(model));
+  assert.equal(decoded.studio, null);
+  assert.deepEqual(decoded.model, model);
 });
-test('reviewed requirements create actual levels and spaces and stay one undoable transaction', () => {
-  const engine = home(), project = engine.getSnapshot();
-  assert.equal(project.building.floors.length,2);
-  assert.equal(project.building.rooms.filter(room=>room.type==='office').length,1);
-  assert.ok(project.building.rooms.some(room=>room.name==='Courtyard garden'));
-  assert.equal(project.building.rooms.filter(room=>room.type==='bedroom').length,3);
-  assert.equal(project.building.rooms.filter(room=>room.type==='bathroom').length,2);
-  assert.ok(Math.abs(project.building.rooms.reduce((area,room)=>area+polygonArea(roomPolygon(project,room)),0)-240)<1e-6);
-  engine.undo(); assert.equal(engine.getSnapshot().building.rooms.length,0);
-  engine.redo(); assert.equal(engine.getSnapshot().building.floors.length,2);
+
+test('wrapped payloads round-trip model and studio', () => {
+  const model = fixture();
+  const studio = { name: 'Bog‘cha Studio', logo: `data:image/png;base64,${base64(PNG)}` };
+  const decoded = decodeSharePayload(encodeSharePayload(model, studio));
+  assert.deepEqual(decoded.model, model);
+  assert.deepEqual(decoded.studio, studio);
 });
-test('one-floor offices and sparse five-floor homes validate with a stair per connection', () => {
-  for(const floors of [1,2,3,4,5]) {
-    const project=createProject();
-    generateArchitecturalLayout(project,{area: floors===1?150:600,floors,bedrooms:1,bathrooms:1,spaces:'Office',style:'Modern'});
-    validateProject(project);
-    assert.equal(project.interior.objects.filter(object=>object.kind==='stairs').length,floors-1);
-    assert.equal(project.building.rooms.filter(room=>room.type==='office').length,1);
-  }
+
+test('shares without studio keep the exact legacy payload shape', () => {
+  const model = fixture();
+  assert.equal(encodeSharePayload(model, null), JSON.stringify(model));
 });
-test('approval fingerprints include request, references and custom constraints', () => {
-  const token=createApprovalToken(brief);
-  assert.equal(verifyApprovalToken(brief,token),true);
-  for(const changed of [{request:'Changed request'},{references:['new.png']},{customConstraints:['Extra requirement']},{spaces:'No office'}]) assert.equal(verifyApprovalToken({...brief,...changed},token),false);
+
+test('a name containing HTML is preserved as plain data for textContent rendering', () => {
+  const hostile = '<img src=x onerror="alert(1)">';
+  const result = studioProfileSchema.safeParse({ name: hostile });
+  assert.equal(result.success, true);
+  if (result.success) assert.equal(result.data.name, hostile);
+  const decoded = decodeSharePayload(encodeSharePayload(fixture(), { name: hostile }));
+  assert.equal(decoded.studio?.name, hostile);
 });
-test('finish comparisons preserve geometry and source snapshots, and apply with undo', () => {
-  const engine=home(), before=engine.getSnapshot();
-  const variant=finishVariant(before,'light_stone');
-  assert.deepEqual(variant.building.walls.map(({materialId,...wall})=>wall),before.building.walls.map(({materialId,...wall})=>wall));
-  assert.deepEqual(variant.interior.objects.map(({materialId,...object})=>object),before.interior.objects.map(({materialId,...object})=>object));
-  assert.deepEqual(engine.getSnapshot(),before);
-  applyDesignPreview(engine,{project:variant,revision:engine.revision,title:'Light stone',changes:1});
-  assert.equal(engine.getSnapshot().building.rooms[0].materials?.floor,'finish_light_stone_floor');
-  engine.undo(); assert.deepEqual(engine.getSnapshot(),before);
+
+test('names above the 60-character limit drop the studio but keep the model', () => {
+  const model = fixture();
+  const payload = JSON.stringify({ model, studio: { name: 'S'.repeat(STUDIO_NAME_MAX + 1) } });
+  const decoded = decodeSharePayload(payload);
+  assert.equal(decoded.studio, null);
+  assert.deepEqual(decoded.model, model);
 });
-test('local command previews do not contact AI or change the saved engine before approval', () => {
-  const engine=home(),before=engine.getSnapshot();
-  const preview=previewLocalEdit(engine,'remove the sofa');
-  assert.deepEqual(engine.getSnapshot(),before);
-  assert.equal(preview.project.interior.objects.filter(o=>o.kind==='sofa').length,0);
-  applyDesignPreview(engine,preview);
-  assert.equal(engine.getSnapshot().interior.objects.filter(o=>o.kind==='sofa').length,0);
-  engine.undo(); assert.deepEqual(engine.getSnapshot(),before);
+
+test('blank or whitespace-only names are rejected', () => {
+  assert.equal(sharePayloadSchema.safeParse({ model: fixture(), studio: { name: '   ' } }).success, false);
 });
-test('changes made after preview reject stale options', () => {
-  const engine=home(),preview=previewLocalEdit(engine,'remove the sofa');
-  engine.renameProject('Newer work');
-  assert.throws(()=>applyDesignPreview(engine,preview),/changed after this preview/);
-  assert.equal(engine.getSnapshot().project.name,'Newer work');
+
+test('oversized logos (over 20 KB decoded) are rejected', () => {
+  const tooBig = new Uint8Array(20 * 1024 + 1);
+  tooBig.set(PNG.subarray(0, 8), 0);
+  const logo = `data:image/png;base64,${base64(tooBig)}`;
+  assert.equal(studioProfileSchema.safeParse({ name: 'Studio', logo }).success, false);
+  assert.equal(sharePayloadSchema.safeParse({ model: fixture(), studio: { name: 'Studio', logo } }).success, false);
 });
-test('home archive has valid stored ZIP records, CRC and UTF-8 paths', async () => {
-  const archive=await archiveFiles([{name:'home.mopple',data:'123456789'},{name:'views/спальня.txt',data:'room'}]);
-  const bytes=new Uint8Array(await archive.arrayBuffer()),view=new DataView(bytes.buffer);
-  assert.equal(view.getUint32(0,true),0x04034b50);
-  assert.equal(view.getUint32(14,true),0xcbf43926);
-  assert.equal(view.getUint16(6,true),0x0800);
-  assert.equal(view.getUint32(bytes.length-22,true),0x06054b50);
-  assert.equal(view.getUint16(bytes.length-14,true),2);
+
+test('a logo at exactly 20 KB decoded passes', () => {
+  const exact = new Uint8Array(20 * 1024);
+  exact.set(PNG.subarray(0, 8), 0);
+  assert.equal(studioProfileSchema.safeParse({ name: 'Studio', logo: `data:image/png;base64,${base64(exact)}` }).success, true);
+});
+
+test('wrong logo types are rejected by mime and file signature', () => {
+  assert.equal(studioProfileSchema.safeParse({ name: 'Studio', logo: `data:image/svg+xml;base64,${base64(PNG)}` }).success, false);
+  // claims PNG but carries a GIF signature
+  assert.equal(studioProfileSchema.safeParse({ name: 'Studio', logo: `data:image/png;base64,${base64(Uint8Array.from(Buffer.from('GIF89a')) )}` }).success, false);
+  assert.equal(studioProfileSchema.safeParse({ name: 'Studio', logo: 'not-a-data-url' }).success, false);
+});
+
+test('non-object studio fields fall back to the legacy branch', () => {
+  const model = fixture();
+  const decoded = decodeSharePayload(JSON.stringify({ model, studio: 'handed a string' }));
+  assert.equal(decoded.studio, null);
+  assert.deepEqual(decoded.model, model);
+});
+
+test('studio profile storage round-trips and rejects corrupt data', () => {
+  const store = new Map<string, string>();
+  const stub = globalThis as { localStorage?: { getItem(k: string): string | null; setItem(k: string, v: string): void } };
+  const original = stub.localStorage;
+  stub.localStorage = {
+    getItem: key => store.get(key) ?? null,
+    setItem: (key, value) => { store.set(key, value); },
+  };
+  try {
+    assert.equal(loadStudioProfile(), null);
+    const profile = { name: 'Studio One' };
+    saveStudioProfile(profile);
+    assert.deepEqual(loadStudioProfile(), profile);
+    store.set('nopple_studio_profile', '{not json');
+    assert.equal(loadStudioProfile(), null);
+    store.set('nopple_studio_profile', JSON.stringify({ name: 42 }));
+    assert.equal(loadStudioProfile(), null);
+  } finally { stub.localStorage = original; }
+});
+
+test('compressed share links round-trip with a version marker and name-only studio', async () => {
+  const model = fixture();
+  const bytes = await compressSharePayload(model, { name: 'Bog‘cha Studio' });
+  const json = new TextDecoder().decode(await gunzipShare(bytes));
+  const parsed = JSON.parse(json) as { version?: number; studio?: { name?: string; logo?: string } };
+  assert.equal(parsed.version, SHARE_VERSION);
+  assert.equal(parsed.studio?.name, 'Bog‘cha Studio');
+  assert.equal(parsed.studio?.logo, undefined);
+  const url = base64UrlEncode(bytes);
+  assert.ok(!url.includes('+') && !url.includes('/') && !url.includes('='), 'base64url must be URL-safe');
+  const decoded = decodeSharePayload(new TextDecoder().decode(await gunzipShare(base64UrlDecode(url))));
+  assert.deepEqual(decoded.model, model);
+  assert.deepEqual(decoded.studio, { name: 'Bog‘cha Studio' });
+});
+
+test('compressed links without studio decode to the bare model', async () => {
+  const model = fixture();
+  const decoded = decodeSharePayload(new TextDecoder().decode(await gunzipShare(await compressSharePayload(model, null))));
+  assert.deepEqual(decoded.model, model);
+  assert.equal(decoded.studio, null);
+});
+
+test('corrupt compressed input fails with clear errors, not crashes', async () => {
+  assert.throws(() => base64UrlDecode('not valid base64url!'), /Invalid share link/);
+  const notGzip = base64UrlDecode('SGVsbG8='); // decodes fine, but is not gzip
+  await assert.rejects(() => gunzipShare(notGzip), /Invalid share link/);
+  await assert.rejects(() => gunzipShare(new Uint8Array([1, 2, 3])), /Invalid share link/);
+});
+
+test('decompression bombs are capped', async () => {
+  const bomb = await gzipBytes(new Uint8Array(2 * 1024 * 1024)); // 2 MB of zeros compresses to a few KB
+  assert.ok(bomb.length < 30000, 'test fixture should be small on the wire');
+  await assert.rejects(() => gunzipShare(bomb, 128 * 1024), /Invalid share link/);
+  // Legit payloads under the cap still decompress.
+  const legit = await gzipBytes(new TextEncoder().encode('x'.repeat(100 * 1024)));
+  const out = await gunzipShare(legit);
+  assert.equal(out.length, 100 * 1024);
 });

@@ -1,0 +1,37 @@
+import {chromium} from '@playwright/test';
+import {createServer} from 'vite';
+import {readFile} from 'node:fs/promises';
+const server=await createServer({server:{host:'127.0.0.1',port:5189,hmr:false}});
+let browser;
+try{
+ await server.listen();
+ const base=`http://127.0.0.1:${server.httpServer.address().port}`;
+ const project=await readFile(new URL('../examples/modern-house.mopple',import.meta.url),'utf8');
+ browser=await chromium.launch({headless:true});
+ const context=await browser.newContext({viewport:{width:1440,height:1000}});
+ await context.addInitScript(value=>localStorage.setItem('mopple_editor_project',value),project);
+ const page=await context.newPage();
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(base+'/advanced',{waitUntil:'networkidle'});
+ await page.locator('#export-materials-csv').waitFor({timeout:60000});
+ const csv=await Promise.all([page.waitForEvent('download',{timeout:30000}).then(d=>d.suggestedFilename()==='mopple-materials.csv'?d:null),page.click('#export-materials-csv')]).then(([d])=>d).catch(()=>null);
+ if(!csv)throw new Error('materials CSV download did not happen'+(errors.length?' | page errors: '+errors.join(' | '):''));
+ const csvPath=await csv.path();
+ const csvText=await readFile(csvPath,'utf8');
+ if(!csvText.startsWith('Rooms\r\nName,Type,Floor'))throw new Error('unexpected CSV header: '+csvText.slice(0,80));
+ const pdf=await Promise.all([page.waitForEvent('download',{timeout:60000}).then(d=>d.suggestedFilename()==='mopple-materials.pdf'?d:null),page.click('#export-materials-pdf')]).then(([d])=>d).catch(()=>null);
+ if(!pdf)throw new Error('materials PDF download did not happen'+(errors.length?' | page errors: '+errors.join(' | '):''));
+ const pdfPath=await pdf.path();
+ const head=Buffer.from(await readFile(pdfPath)).subarray(0,8).toString();
+ if(!head.startsWith('%PDF'))throw new Error('not a PDF: '+head);
+ const size=(await (await import('node:fs/promises')).stat(pdfPath)).size;
+ if(size<1000)throw new Error('PDF suspiciously small: '+size);
+ const glb=await Promise.all([page.waitForEvent('download',{timeout:60000}).then(d=>d.suggestedFilename()==='mopple-home.glb'?d:null),page.click('#export-glb')]).then(([d])=>d).catch(()=>null);
+ if(!glb)throw new Error('GLB download did not happen'+(errors.length?' | page errors: '+errors.join(' | '):''));
+ const glbPath=await glb.path();
+ const glbHead=Buffer.from(await readFile(glbPath)).subarray(0,4).toString('binary');
+ if(glbHead!=='glTF')throw new Error('not a GLB: '+glbHead);
+ const glbSize=(await (await import('node:fs/promises')).stat(glbPath)).size;
+ if(errors.length)throw new Error('page errors: '+errors.join(' | '));
+ console.log(`Materials + GLB export checks passed (CSV ${csvText.length} bytes, PDF ${size} bytes, GLB ${glbSize} bytes).`);
+}finally{await browser?.close();await server.close();}

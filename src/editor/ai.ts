@@ -1,80 +1,90 @@
-import type { MoppleProjectEngine } from '../project/engine.ts';
 import { roomPolygon } from '../project/geometry.ts';
 import type { MoppleOperation, MoppleOperations } from '../project/operations.ts';
 import { validateOperations } from '../project/operations.ts';
 import type { MoppleInteriorObject, MoppleLight, MoppleMaterial, MoppleProject, MoppleRoom } from '../project/schema.ts';
-
-export interface AIExecutionResult {
-  success: boolean;
-  message: string;
-  operationsCount: number;
-  source: 'nvidia_nim' | 'local_semantic';
-  model?: string;
-}
+import { AI_SELECTION_REQUIRED, buildAiContext, type AiSelection } from '../project/ai-context.ts';
 
 export const DEFAULT_AI_MODEL = 'z-ai/glm-5.3-flash';
-export const DEFAULT_GEMINI_MODEL = DEFAULT_AI_MODEL;
-let tabApiKey = '';
-let migratedKey = false;
-export function getStoredApiKey(): string {
-  if (!migratedKey) {
-    migratedKey = true;
-    try {
-      tabApiKey = localStorage.getItem('mopple_nim_api_key') || '';
-      localStorage.removeItem('mopple_nim_api_key');
-      localStorage.removeItem('mopple_gemini_api_key');
-    } catch { /* Storage may be unavailable. */ }
-  }
-  return tabApiKey;
-}
-export function setStoredApiKey(key: string): void { getStoredApiKey(); tabApiKey = key.trim(); }
+/** Keep in sync with the server-side allowlist in server/ai.ts. */
+export const AI_MODEL_OPTIONS = ['z-ai/glm-5.3-flash', 'meta/llama-3.3-70b-instruct', 'deepseek-ai/deepseek-r1', 'qwen/qwen2.5-72b-instruct'] as const;
 export function getStoredModel(): string {
-  try { const m = localStorage.getItem('mopple_ai_model'); return m && !m.includes('gemini') ? m : DEFAULT_AI_MODEL; }
-  catch { return DEFAULT_AI_MODEL; }
+  try {
+    const m = localStorage.getItem('mopple_ai_model');
+    return m && (AI_MODEL_OPTIONS as readonly string[]).includes(m) ? m : DEFAULT_AI_MODEL;
+  } catch { return DEFAULT_AI_MODEL; }
 }
 export function setStoredModel(model: string): void {
   try { localStorage.setItem('mopple_ai_model', model.trim()); } catch { /* Optional preference. */ }
 }
-const busyEngines = new WeakSet<MoppleProjectEngine>();
-export async function executeAiPrompt(prompt: string, engine: MoppleProjectEngine, selectedId?: string): Promise<AIExecutionResult> {
+
+/** Hosted AI fallback is a per-deployment opt-in; the default is off. */
+export function aiFallbackClientEnabled(): boolean {
+  const env = (import.meta as { env?: Record<string, string | undefined> }).env;
+  return env?.VITE_ENABLE_AI_FALLBACK === 'true';
+}
+
+export type AiFailureKind = 'off' | 'unconfigured' | 'unavailable' | 'invalid' | 'selection' | 'cancelled' | 'error';
+
+/** Maps a thrown failure to a UI state so every surface can show clear copy. */
+export function classifyAiFailure(error: unknown): AiFailureKind {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/Select a room, wall, or object first/.test(message)) return 'selection';
+  if (/cancelled/i.test(message)) return 'cancelled';
+  if (/Hosted AI is disabled/i.test(message)) return 'off';
+  if (/not configured|Hosted AI is unavailable|rate limit is required|distributed AI quota is required/i.test(message)) return 'unconfigured';
+  if (/limit reached|limits unavailable|temporarily unavailable|timed out|Cannot reach the AI service|endpoint unavailable/i.test(message)) return 'unavailable';
+  if (/outside your selection|replacing your house|unusable|invalid/i.test(message)) return 'invalid';
+  return 'error';
+}
+
+let requestInFlight = false;
+/**
+ * Requests operations for one selection and returns them for preview. It never
+ * applies anything, never sends a browser key, and never sends the full project.
+ */
+export async function requestAiOperations(
+  prompt: string,
+  project: MoppleProject,
+  selection: AiSelection,
+  options: { signal?: AbortSignal } = {},
+): Promise<MoppleOperations> {
   const text = prompt.trim();
   if (!text) throw new Error('Enter a design request first.');
   if (isHouseRequest(text)) throw new Error('Complete and review the house brief before creating a starter concept.');
-  if (busyEngines.has(engine)) throw new Error('A request is already running. Wait for it to finish.');
-  busyEngines.add(engine);
+  if (!selection) throw new Error(AI_SELECTION_REQUIRED);
+  if (requestInFlight) throw new Error('A request is already running. Wait for it to finish.');
+  requestInFlight = true;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 95000);
+  const abortFromUi = () => controller.abort();
+  options.signal?.addEventListener('abort', abortFromUi, { once: true });
   try {
-    const apiKey = getStoredApiKey(), model = getStoredModel(), revision = engine.revision;
-    const project = engine.getSnapshot();
-    let operations: MoppleOperations;
-    let hosted = false, fallbackReason = '';
+    const model = getStoredModel();
+    const context = buildAiContext(project, selection);
+    let response: Response;
     try {
-      let response: Response;
-      try {
-        response = await fetch('/api/ai/operations', {
-          method: 'POST', headers: { 'Content-Type': 'application/json', ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
-          body: JSON.stringify({ prompt: text, project, selectedId, model, mode: isHouseRequest(text) ? 'GENERATE' : 'EDIT' }), signal: AbortSignal.timeout(95000),
-        });
-      } catch (error) {
-        if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) throw new Error('AI timed out. Your design is unchanged. Try a smaller request.');
-        throw new Error('Cannot reach the AI service. Check your connection and run Nopple with its server. Your design is unchanged.');
-      }
-      const body: unknown = await response.json().catch(() => null);
-      if (!response.ok) {
-        const detail = body && typeof body === 'object' && 'error' in body && typeof body.error === 'string' ? body.error : 'AI endpoint unavailable. Start Nopple with npm run dev or npm start.';
-        throw new Error(detail);
-      }
-      operations = sanitizeOperations(body, project); hosted = true;
+      response = await fetch('/api/ai/operations', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: text, project: context, selectedId: selection.id, model, mode: 'EDIT' }),
+        signal: controller.signal,
+      });
     } catch (error) {
-      fallbackReason = error instanceof Error ? error.message : 'Hosted AI unavailable';
-      const interpreted = interpretPromptLocally(text, project, selectedId);
-      if (!interpreted.length) throw new Error('Offline commands support creating a house, resizing a room, moving/adding furniture, materials and lighting. Rephrase the request or connect NVIDIA NIM.');
-      operations = validateOperations({ operations: interpreted });
+      if (options.signal?.aborted) throw new Error('AI request cancelled.');
+      if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) throw new Error('AI timed out. Your design is unchanged. Try a smaller request.');
+      throw new Error('Cannot reach the AI service. Check your connection and run Nopple with its server. Your design is unchanged.');
+    } finally {
+      clearTimeout(timeout);
+      options.signal?.removeEventListener('abort', abortFromUi);
     }
-    if (engine.revision !== revision) throw new Error('The project changed while AI was working. Nothing was applied; submit again using the current design.');
+    const body: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      const detail = body && typeof body === 'object' && 'error' in body && typeof body.error === 'string' ? body.error : 'AI endpoint unavailable. Start Nopple with npm run dev or npm start.';
+      throw new Error(detail);
+    }
+    const operations = sanitizeOperations(body, context);
     if (operations.operations.some(o => o.type === 'create_house' || o.type === 'update_design_brief')) throw new Error('AI proposed replacing your house for an ordinary edit. Nothing was applied; rephrase the request.');
-    engine.applyOperations(operations);
-    return { success: true, message: `Applied ${operations.operations.length} operation(s)${hosted ? ` via ${model}` : ` offline. ${fallbackReason}`}. Undo is available.`, operationsCount: operations.operations.length, source: hosted ? 'nvidia_nim' : 'local_semantic', model: hosted ? model : undefined };
-  } finally { busyEngines.delete(engine); }
+    return operations;
+  } finally { requestInFlight = false; }
 }
 export function isHouseRequest(text: string): boolean { if (/\bmake\s+(?:it|the|this|my|our)\b/i.test(text)) return false; if(/(?:i want|i need|i.d like|хочу|нужен|нужна|нужно|menga|kerak).*(?:home|house|apartment|дом|квартир|uy|xonadon)/i.test(text) || /(?:uy|xonadon).*(?:kerak)/i.test(text))return true; return /\b(create|generate|build|design|make|plan)\b[\s\S]*\b(house|home|apartment|villa)\b/i.test(text) || /(?:дом|квартир).*(?:созд|сдел|спроект)|(?:созд|сдел|спроект).*(?:дом|квартир)|(?:uy|xonadon|kvartira).*(?:yarat|qur|loyiha)|(?:yarat|qur|loyiha).*(?:uy|xonadon|kvartira)/i.test(text); }
 const freshId = (prefix: string) => `${prefix}_${globalThis.crypto.randomUUID()}`;
@@ -379,7 +389,6 @@ function findMentionedFurnitureKind(text: string): MoppleInteriorObject['kind'] 
 export function sanitizeOperations(raw: unknown, _project: MoppleProject): MoppleOperations {
   return validateOperations(raw);
 }
-export const sanitizeGeminiOperations = sanitizeOperations;
 
 export function normalizePrompt(prompt: string): string {
  let text = prompt.toLowerCase();

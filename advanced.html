@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Nopple Studio — Design your home</title>
   <link rel="icon" type="image/png" href="/nopple-icon.png" />
 </head>
@@ -48,17 +48,23 @@
         <button class="icon-button" id="btn-export" title="Export .mopple project">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         </button>
-        <button class="icon-button" id="btn-apikey" hidden title="AI connection is deferred">
+        <button class="icon-button" id="btn-ai-settings" hidden title="AI settings">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
         </button>
       </div>
     </header>
 
-    <div class="workspace-tools"><a href="/editor" class="btn btn-primary">Editor</a><button id="btn-new-home" class="btn btn-secondary">New home</button><button id="btn-compare" class="btn btn-secondary">Compare finishes</button><button id="btn-delivery" class="btn btn-primary">Export home</button><button id="btn-history" class="btn btn-secondary">Versions</button><button id="share-home" class="btn btn-secondary">Share</button><button id="export-png" class="btn btn-secondary">Plan PNG</button><button id="export-pdf" class="btn btn-secondary">Plan PDF</button><button id="export-3d" class="btn btn-secondary">3D image</button>
+    <div class="mobile-studio-notice" role="note">
+      <span>The advanced editor works best on a larger screen.</span>
+      <a href="/editor" class="btn btn-primary">Open Editor</a>
+    </div>
+
+    <div class="workspace-tools"><a href="/editor" class="btn btn-primary">Editor</a><button id="btn-new-home" class="btn btn-secondary">New home</button><button id="btn-compare" class="btn btn-secondary">Compare finishes</button><button id="btn-delivery" class="btn btn-primary">Export home</button><button id="btn-history" class="btn btn-secondary">Versions</button><button id="share-home" class="btn btn-secondary">Share</button><button id="export-png" class="btn btn-secondary">Plan PNG</button><button id="export-pdf" class="btn btn-secondary">Plan PDF</button><button id="export-3d" class="btn btn-secondary">3D image</button><button id="export-glb" class="btn btn-secondary">Export GLB</button><button id="export-materials-csv" class="btn btn-secondary">Materials CSV</button><button id="export-materials-pdf" class="btn btn-secondary">Materials PDF</button>
       <button type="button" class="btn btn-secondary panel-toggle" data-panel="layers-container" aria-controls="layers-container" aria-expanded="false">Layers</button>
       <label for="floor-picker">Plan floor</label><select id="floor-picker" class="input-select"></select>
       <button type="button" class="btn btn-secondary panel-toggle" data-panel="properties-container" aria-controls="properties-container" aria-expanded="false">Properties</button>
     </div>
+    <details id="studio-branding" class="studio-branding"><summary>Studio branding</summary><div class="studio-fields"><label for="studio-name">Studio name</label><input id="studio-name" maxlength="60" autocomplete="organization" placeholder="Studio name"><label for="studio-logo">Logo (PNG, JPEG or WebP, up to 20 KB)</label><input id="studio-logo" type="file" accept="image/png,image/jpeg,image/webp"><img id="studio-logo-preview" alt="" hidden><p id="studio-logo-hint" class="studio-hint" hidden>The logo will not appear in offline share links.</p><button id="studio-save" class="btn btn-secondary">Save studio profile</button><p id="studio-status" role="status"></p></div></details>
     <!-- Main Workspace -->
     <main class="editor-workspace">
       <!-- Left Sidebar: Layers & Hierarchy -->
@@ -224,30 +230,25 @@
     </main>
   </div>
 
-  <!-- API Key Modal -->
-  <div class="modal-backdrop" id="modal-apikey">
+  <!-- AI Settings Modal (no keys: hosted AI is configured on the server) -->
+  <div class="modal-backdrop" id="modal-ai-settings">
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="ai-settings-title">
-      <div class="modal-title" id="ai-settings-title">NVIDIA NIM AI Configuration</div>
+      <div class="modal-title" id="ai-settings-title">AI settings</div>
       <div class="modal-desc">
-        Hosted AI works automatically when configured. This optional advanced override uses your personal NVIDIA NIM key from <a href="https://build.nvidia.com" target="_blank" rel="noopener" style="color: var(--mint); text-decoration: underline;">build.nvidia.com</a> to power Nopple Studio with <strong>GLM 5.3 Flash</strong>. If hosted AI is unavailable, the offline designer handles common English, Russian and Uzbek requests.
+        Hosted AI is configured on the server — no key is needed, stored or sent from your browser. When the server has hosted AI enabled, a command the local rules cannot handle is sent to the AI service with only your text and the selected room, and the result is always previewed before you apply it.
       </div>
       <div class="prop-group">
-        <div class="prop-label">AI Model (NVIDIA NIM)</div>
-        <select id="gemini-model-select" class="input-select">
+        <div class="prop-label">AI model</div>
+        <select id="ai-model-select" class="input-select">
           <option value="z-ai/glm-5.3-flash" selected>GLM 5.3 Flash (z-ai/glm-5.3-flash) — Recommended</option>
           <option value="meta/llama-3.3-70b-instruct">Llama 3.3 70B Instruct (meta/llama-3.3-70b-instruct)</option>
           <option value="deepseek-ai/deepseek-r1">DeepSeek R1 (deepseek-ai/deepseek-r1)</option>
           <option value="qwen/qwen2.5-72b-instruct">Qwen 2.5 72B Instruct (qwen/qwen2.5-72b-instruct)</option>
         </select>
       </div>
-      <div class="prop-group">
-        <div class="prop-label">NVIDIA NIM API Key</div>
-        <input type="password" id="apikey-input" class="input-text" placeholder="nvapi-xxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
-        <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Your key is kept in memory until this tab reloads. Use a personal <code>nvapi-</code> key; project data is sent to NVIDIA when you submit a request.</div>
-      </div>
       <div class="modal-actions">
-        <button class="btn btn-secondary" id="btn-close-apikey">Cancel</button>
-        <button class="btn btn-primary" id="btn-save-apikey">Save Configuration</button>
+        <button class="btn btn-secondary" id="btn-close-ai-settings">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-ai-settings">Save</button>
       </div>
     </div>
   </div>

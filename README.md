@@ -1,6 +1,6 @@
 # Nopple
 
-A local-first home-design studio with reviewed requirements, synchronized floor plans and editable 3D, finish comparisons, saved versions, and share/export tools. The homepage and Editor follow the dark Air reference in `design.md`, with self-hosted Inter, condensed headlines and cloud/glass atmosphere. The advanced editor retains its detailed tools.
+A local-first home-design studio with reviewed requirements, synchronized floor plans and editable 3D, finish comparisons, saved versions, and share/export tools. Built for professionals — interior designers, builders, small developers and agents — to show clients the home before it exists. The homepage carries that professional positioning in three languages with a demo-video placeholder, and follows the dark Air reference in `design.md` with self-hosted Inter, condensed headlines and cloud/glass atmosphere. The advanced editor retains its detailed tools.
 
 ## Run
 
@@ -11,17 +11,17 @@ npm install
 npm run dev
 ```
 
-Open `/editor` for Editor, `/advanced` for the full Studio tools, `/homes` for your library, and `/` for architectural inspiration and Editor entry. Legacy `.html` links redirect automatically. No credentials are needed for the local workflow. The editor does not call AI endpoints: design commands are interpreted locally and always previewed before you apply them. AI integration is deferred.
+Open `/editor` for Editor, `/advanced` for the full Studio tools, `/homes` for your library, and `/` for architectural inspiration and Editor entry. Legacy `.html` links redirect automatically. No credentials are needed for the local workflow. Design commands are interpreted locally and always previewed before you apply them. Hosted AI is an explicit per-deployment opt-in (see *Hosted AI* below); with it off, the editors never call AI endpoints.
 
 ## Editor
 
 Switch between architectural and furnished plans, or explore the 3D house. Select a room, wall or object to open its focused edit prompt. Preview supported local changes before applying, with undo and local saving. Architectural dimensions start enabled; interior dimensions are optional. Expand **Dimensions & schedules** to filter model measurements by level, category or search, export the filtered CSV, or download the current visible plan as SVG. Canvas labels prioritize overall dimensions and the selected wall/opening; the schedule supplies the complete measurements. Wall/room lengths use centerlines, overall extents use outer faces, and furniture dimensions exclude working clearances.
 
-See [AI_SETUP.md](docs/AI_SETUP.md) for where to configure a future NVIDIA key; adding a key does not yet enable AI in Editor.
+See [AI_SETUP.md](docs/AI_SETUP.md) for the hosted-AI environment variables and deployment steps. No API key is ever entered, stored or sent from the browser.
 
 ## Advanced Studio: design → compare → share
 
-1. Choose **New home**, start with a compact, family, or courtyard brief, and review the requirements. You can also revise the existing home's brief. Approving a new home creates a separate project; undo returns to the previous design.
+1. Choose **New home**, start from a brief template — studio (50 m²), 2-bedroom apartment (68 m²), small house (110 m²), compact, family, or courtyard — and review the requirements. You can also revise the existing home's brief. Approving a new home creates a separate project; undo returns to the previous design. All templates feed the same brief flow, and the generated homes work with the normal selection and prompt-edit flow.
 2. Use **Plan / Split / 3D**, level controls, layers, and properties to edit. Local generation supports 1–5 floors, the requested bedroom/bathroom counts, offices, courtyard concepts, shared walls/openings, and aligned stair positions. Unsupported compact combinations fail before changing your design.
 3. Enter a supported command such as `remove the sofa` or `change living room floor to dark oak`. Review the actual before/after model captures, then choose **Apply change** or **Keep current**. Unsupported language produces guidance instead of guessing.
 
@@ -29,15 +29,49 @@ See [AI_SETUP.md](docs/AI_SETUP.md) for where to configure a future NVIDIA key; 
 4. **Compare finishes** renders Warm oak, Light stone, and Evening light from the same camera. Apply to the whole home or a selected room. Finishes preserve geometry, and applying them is undoable.
 5. **Render gallery** captures room views and street/facade perspectives at 1280, 1920, or 2560 px. Captures persist locally in IndexedDB for the matching project revision; design changes invalidate them. These are deterministic 3D scene images, not AI photographs.
 6. **Versions** restores a previous local design without losing undo. **My homes** shows plan previews, search, rename, duplication, deletion, and local/cloud histories.
-7. **Export home** downloads labelled PNG plans, a multipage raster PDF, a 3D screenshot, or the editable `.mopple` project. The ZIP home package includes all floor plans, dimensions, local room/exterior captures when WebGL is available, and a future render handoff. Share links open a read-only 3D viewer with a plan fallback.
+7. **Export home** downloads labelled PNG plans, a multipage raster PDF, a 3D screenshot, a binary **GLB** of the 3D home (building and furniture, for DCC tools and viewers), or the editable `.mopple` project. **Materials CSV** and **Materials PDF** export the current project's rooms (with areas and floor/wall finishes), finishes (with usage counts) and furniture schedule; the PDF is rasterized like the plan PDF so Cyrillic and Uzbek labels survive. The ZIP home package includes all floor plans, dimensions, local room/exterior captures when WebGL is available, and a future render handoff. Share links open a read-only 3D viewer with a plan fallback.
+
+### Studio branding on share links
+
+The advanced editor has a **Studio branding** panel. A studio name (max 60 characters) and an optional logo are stored on this device (`localStorage`), reused across homes, and never change the saved `.mopple` format. Logo rules: PNG, JPEG or WebP only (no SVG; the file signature is checked), downscaled to at most 256 px, capped at 20 KB encoded, and rendered only through an `img` element. The share page shows the name as plain text. Compressed links carry the studio **name** but not the logo — the panel tells you when a set logo will not appear in an offline link (stored cloud shares are the future home for logos). Links without branding — and older links — open exactly as before. Cloud (`?id=`) shares currently do not carry branding.
+
+### Share link size limits
+
+Offline links carry the whole project. Since the Pro pilot, links are gzip-compressed (`CompressionStream` + base64url, version-marked payload; browsers without `CompressionStream` fall back to the original uncompressed format). Compressed links cap the decompressed payload at 128 KB, so crafted "zip bomb" links fail instead of consuming memory, and links over 150,000 characters cannot be opened. Measured with a 22-character origin: a default empty home links at ~450 characters, the shipped example at ~9,000, a generated 3-floor 240 m² home at ~44,000, and 300 m² at ~50,000 — compression shrinks real homes to roughly 2,000–5,000 characters. Uncompressed legacy links still reject JSON over 100,000 bytes. Very large homes need the cloud share path instead.
 
 Local snapshots and ten previous versions are saved on this browser/device. Download a project/package to keep an independent backup. Portable share links contain the project snapshot and cannot be revoked. Local captures are bounded to the twelve most recently captured projects and do not travel with cloud projects or `.mopple` files.
 
-## Optional cloud and future AI setup
+## Hosted AI (opt-in)
+
+Local rules handle common edits offline. When they cannot handle a command, the editor can fall back to a hosted model — but only when both the server and the client flags are on, and only for the selected room, wall or object. Requests carry the user's text plus a selection-scoped context (never the full project), the server validates every returned operation, and the result is always a reviewable preview that you apply or discard. No key is entered, stored or sent from the browser.
+
+| Variable | Meaning |
+| --- | --- |
+| `NVIDIA_API_KEY` | Server-side NVIDIA NIM key. Missing key → hosted requests return a generic 503. Never use a `VITE_` prefix; browser keys are not supported. |
+| `AI_FALLBACK_ENABLED` | Server kill switch. Must be exactly `true`, otherwise `/api/ai/operations` and `/api/ai/generate` return 503. Default off. |
+| `VITE_ENABLE_AI_FALLBACK` | Build-time client opt-in. Default off; with it off, the editors behave exactly like the local-only interpreter. |
+| `AI_PER_IP_PER_MINUTE` | Requests per IP per minute (default 10). Exceeding it returns 429. |
+| `AI_DAILY_CAP` | Deployment-wide daily cap across all callers (default 500). Reaching it returns 503. |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Atomic cross-instance quotas. Required on Vercel. |
+
+Quota policy: hosted mode is the default unless the environment is explicitly local development (`NODE_ENV=development`, or `VERCEL_ENV=development` from `vercel dev`). Vercel deployments (production and previews) require Upstash Redis; a standalone production server may instead set explicit `AI_PER_IP_PER_MINUTE` and `AI_DAILY_CAP`. Without a usable quota, hosted requests fail closed with 503 and the offline designer keeps working. Caller-supplied API keys are ignored in production and on Vercel — the server key is the only credential.
+
+To test on a Vercel preview: set `NVIDIA_API_KEY`, `AI_FALLBACK_ENABLED=true`, and both Upstash variables in the project's environment (previews use the same server key), deploy a preview, open the preview URL with `VITE_ENABLE_AI_FALLBACK=true` in the build environment, select a room or item, and submit a command the local interpreter does not know (for example `nudge this item left`). The status line should show the hosted states (thinking with cancel, rate limit, or unconfigured) and never apply anything without review.
+
+The free NVIDIA tier is intended for development only; put a paid key and enforced quotas behind any public deployment. `/api/ai/generate` remains a process-local concept-generation endpoint gated by the same flag, key and quota rules. Job status/cancellation require the random access token returned with the job; public job enumeration is disabled.
+
+## Optional cloud setup
 
 `.env.example` lists optional Supabase, telemetry, waitlist, canonical origin, and server settings. See [UPGRADE_SUMMARY.md](docs/UPGRADE_SUMMARY.md) and `supabase/001_alpha.sql` for setup. Cloud services were not provisioned or live-tested in this implementation. Cloud saves are serialized per editor session; concurrent writes from other devices still require conflict handling.
 
-The existing NVIDIA operations handler and Vercel adapters remain available for a later integration, but the Studio UI does not invoke them. `/api/ai/generate` is a process-local concept-generation endpoint, not durable storage or an image provider. Job status/cancellation require the random access token returned with the job; public job enumeration is disabled. Approval fingerprints include all brief requirement fields and detect changed inputs; they are not authentication or a server signature.
+Waitlist variables (landing page form):
+
+| Variable | Meaning |
+| --- | --- |
+| `VITE_WAITLIST_ENDPOINT` | Public JSON endpoint receiving `{email}` POSTs for the Nopple Pro waitlist; must accept browser CORS. The human chooses the destination per deployment. Missing → interest is saved on this device and labelled as local. |
+| `VITE_WAITLIST_URL` | Deprecated alias of `VITE_WAITLIST_ENDPOINT`, kept so existing configurations keep working. |
+
+The form validates the address (max 254 characters), shows busy/success/local/error states, and includes a honeypot field that silently succeeds for bots without posting.
 
 Future image enhancement should consume actual model captures plus camera/material/geometry context. AI images are not implemented. Walkthrough navigation is deferred.
 
@@ -55,6 +89,7 @@ npm run test:architecture
 npm run test:courtyard
 npm run test:languages
 npm run test:warm
+node scripts/check-materials.mjs
 ```
 
 The build includes strict TypeScript checking. Browser scripts start their own local Vite servers and require Playwright Chromium (`npx playwright install chromium` if missing). The warm-design sweep checks six viewport widths and all three languages. Screenshots and reports are generated under the ignored `.impeccable/review/` directory.

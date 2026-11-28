@@ -1,10 +1,12 @@
 import {initLanguage} from '../i18n/index.ts';
 import { createStudio } from './studio.ts';
 import { createSelectionEditor } from './selection-editor.ts';
-import { previewLocalEdit } from '../project/preview.ts';
+import { previewEditWithAi, previewLocalEdit } from '../project/preview.ts';
 import { track } from '../alpha/telemetry.ts';
 import { shareHome } from '../alpha/projects.ts';
-import { exportPlan, download } from '../alpha/exporters.ts';
+import { exportPlan, download, materialsPdf } from '../alpha/exporters.ts';
+import { materialsCsv, materialsSchedule } from '../project/materials.ts';
+import { initStudioBranding } from '../alpha/studio-ui.ts';
 import { saveHome, saveLocation } from '../alpha/projects.ts';
 import { errorMessage, labelControls, reportEditorError } from './ui.ts';
 import '@fontsource-variable/inter';
@@ -16,7 +18,8 @@ import { MoppleProjectEngine } from '../project/engine.ts';
 import { roomPolygon } from '../project/geometry.ts';
 import type { MoppleInteriorObject } from '../project/schema.ts';
 import { parseProject } from '../project/validation.ts';
-import { isHouseRequest, getStoredApiKey, getStoredModel, setStoredApiKey, setStoredModel } from './ai.ts';
+import { isHouseRequest, getStoredModel, setStoredModel, aiFallbackClientEnabled } from './ai.ts';
+import { aiStateMessage, aiThinkingLabel, aiCancelLabel, aiNoticeText } from './ai-status.ts';
 import { Canvas2D, type SelectedEntity } from './canvas2d.ts';
 import { createArchitectureControls } from './architecture.ts';
 import { Canvas3D } from './canvas3d.ts';
@@ -79,11 +82,10 @@ export function initEditor() {
   const engineBadgeText = document.getElementById('engine-badge-text') as HTMLElement | null;
 
   // Modals
-  const apiKeyModal = document.getElementById('modal-apikey') as HTMLElement;
-  const apiKeyInput = document.getElementById('apikey-input') as HTMLInputElement;
-  const geminiModelSelect = document.getElementById('gemini-model-select') as HTMLSelectElement | null;
-  const btnSaveApiKey = document.getElementById('btn-save-apikey') as HTMLButtonElement;
-  const btnCloseApiKey = document.getElementById('btn-close-apikey') as HTMLButtonElement;
+  const aiSettingsModal = document.getElementById('modal-ai-settings') as HTMLElement;
+  const aiModelSelect = document.getElementById('ai-model-select') as HTMLSelectElement | null;
+  const btnSaveAiSettings = document.getElementById('btn-save-ai-settings') as HTMLButtonElement;
+  const btnCloseAiSettings = document.getElementById('btn-close-ai-settings') as HTMLButtonElement;
 
   // 1. Instantiate 2D & 3D Renderers
   const canvas2d = new Canvas2D(pane2D, {
@@ -104,10 +106,19 @@ export function initEditor() {
 
   for (const format of ['png','pdf'] as const) document.getElementById(`export-${format}`)?.addEventListener('click',()=>{ track('export_clicked',{format}); void exportPlan(engine.getSnapshot(),format).catch(e=>showStatus(errorMessage(e),'error')); });
   document.getElementById('export-3d')?.addEventListener('click',()=>{track('export_clicked',{format:'3d'});if(!canvas3d){showStatus('3D is unavailable in this browser.','error');return;}void canvas3d.screenshot().then(blob=>download(blob,'mopple-3d.png')).catch(e=>showStatus(errorMessage(e),'error'));});
+  document.getElementById('export-glb')?.addEventListener('click',()=>{track('export_clicked',{format:'glb'});if(!canvas3d){showStatus('3D is unavailable in this browser.','error');return;}void canvas3d.exportGlb().then(blob=>download(blob,'mopple-home.glb')).catch(e=>showStatus(errorMessage(e),'error'));});
+  document.getElementById('export-materials-csv')?.addEventListener('click',()=>{track('export_clicked',{format:'materials-csv'});const blob=new Blob([materialsCsv(materialsSchedule(engine.getSnapshot()))],{type:'text/csv;charset=utf-8'});download(blob,'mopple-materials.csv');});
+  document.getElementById('export-materials-pdf')?.addEventListener('click',()=>{track('export_clicked',{format:'materials-pdf'});try{download(materialsPdf(engine.getSnapshot()),'mopple-materials.pdf');}catch(e){showStatus(errorMessage(e),'error');}});
+  initStudioBranding();
   document.getElementById('share-home')?.addEventListener('click',()=>{void shareHome(engine.getSnapshot()).then(async url=>{track('home_shared');try{await navigator.clipboard.writeText(url);showStatus('Read-only share link copied.','success');}catch{const link=document.createElement('a');link.href=url;link.textContent='Open your share link';link.target='_blank';link.rel='noopener';document.querySelector('.workspace-tools')?.append(link);showStatus('Share link ready. Open it to copy the address.','success');}}).catch(e=>showStatus(errorMessage(e),'error'));});
   const architectureControls = canvas3d ? createArchitectureControls(pane3D, engine, canvas3d, entity => handleSelect(entity)) : undefined;
   architectureControls?.setView('cutaway');
   if (architectureControls) cleanups.push(() => architectureControls.destroy());
+  // Opening the measurement schedule dismisses the floating edit prompt so the
+  // schedule is fully usable on small screens; the selection itself is kept.
+  pane3D.querySelector<HTMLDetailsElement>('details.measurement-schedule')?.addEventListener('toggle', event => {
+    if ((event.target as HTMLDetailsElement).open) selectionEditor.setSelection(null);
+  });
 
   // 2. Instantiate Panels
   const layersPanel = new LayersPanel(layersContainer, {
@@ -122,7 +133,7 @@ export function initEditor() {
     onExport: () => handleExport(),
     onImport: () => triggerFileInput(),
     onDeleteSelected: () => handleDeleteSelected(),
-    onOpenApiKeyModal: () => showStatus('AI connection is reserved for the final integration. Local previews are available now.', 'success'),
+    onOpenAiSettings: () => openAiSettings(),
   });
 
   // Synchronized Selection Handler
@@ -351,73 +362,92 @@ export function initEditor() {
   document.getElementById('btn-new-home')?.addEventListener('click', () => houseBrief.open('Describe your new home', true));
 
   // One outstanding request; errors preserve input and never guess a fallback edit.
+  // With VITE_ENABLE_AI_FALLBACK on, an unsupported local command may consult the
+  // hosted service; the result is always a reviewable preview, never a direct apply.
+  const hostedAi = aiFallbackClientEnabled();
+  if (hostedAi) {
+    const inputRow = document.querySelector('.ai-floating-bar .ai-input-row');
+    if (inputRow?.parentElement) {
+      const notice = document.createElement('p');
+      notice.className = 'ai-privacy-note';
+      notice.textContent = aiNoticeText();
+      inputRow.after(notice);
+    }
+  }
   let aiBusy = false;
+  let aiAbort: AbortController | null = null;
   async function runAiPrompt(promptText: string) {
     if (aiBusy) return;
     const text = promptText.trim();
     if (!text) { showStatus('Enter a house description or a change to make.', 'error'); aiInput.focus(); return; }
     if (isHouseRequest(text)) { houseBrief.open(text); return; }
-    aiBusy = true; aiSubmit.disabled = true;
+    aiBusy = true;
+    aiSubmit.disabled = !hostedAi;
+    if (hostedAi) aiSubmit.textContent = aiCancelLabel();
     document.querySelectorAll<HTMLButtonElement>('.ai-chip').forEach(b => b.disabled = true);
-    showStatus('Preparing a local preview…', 'loading');
+    showStatus(hostedAi ? aiThinkingLabel() : 'Preparing a local preview…', 'loading');
     try {
-      const preview = previewLocalEdit(engine, text, selectedEntity?.id);
+      const preview = hostedAi
+        ? await previewEditWithAi(engine, text, selectedEntity ?? undefined, { signal: (aiAbort = new AbortController()).signal })
+        : previewLocalEdit(engine, text, selectedEntity?.id);
       studio.review(preview);
       showStatus('Preview ready. Review the change before applying it.', 'success');
       aiInput.value = '';
-    } catch (error) { showStatus(errorMessage(error), 'error'); }
-    finally { aiBusy = false; aiSubmit.disabled = false; document.querySelectorAll<HTMLButtonElement>('.ai-chip').forEach(b => b.disabled = false); syncRenderPlan(); }
+    } catch (error) {
+      showStatus(hostedAi ? aiStateMessage(error) : errorMessage(error), 'error');
+    }
+    finally {
+      aiBusy = false; aiAbort = null;
+      aiSubmit.disabled = false; aiSubmit.textContent = 'Preview';
+      document.querySelectorAll<HTMLButtonElement>('.ai-chip').forEach(b => b.disabled = false); syncRenderPlan();
+    }
   }
-  aiSubmit.addEventListener('click', () => void runAiPrompt(aiInput.value));
+  aiSubmit.addEventListener('click', () => {
+    if (hostedAi && aiBusy && aiAbort) { aiAbort.abort(); return; }
+    void runAiPrompt(aiInput.value);
+  });
   aiInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); void runAiPrompt(aiInput.value); } });
   document.querySelectorAll<HTMLButtonElement>('.ai-chip[data-prompt]').forEach(chip => chip.addEventListener('click', () => {
     aiInput.value = chip.dataset.prompt || ''; void runAiPrompt(aiInput.value);
   }));
 
-  // API Key & Model Modal
+  // AI Settings modal: model preference only. No key is ever entered, stored or sent from the browser.
   let modalTrigger: HTMLElement | null = null;
-  function openApiKeyModal() {
+  function openAiSettings() {
     modalTrigger = document.activeElement as HTMLElement | null;
-    apiKeyInput.value = getStoredApiKey();
-    if (geminiModelSelect) {
-      geminiModelSelect.value = getStoredModel();
+    if (aiModelSelect) {
+      aiModelSelect.value = getStoredModel();
     }
-    apiKeyModal.classList.add('show'); document.getElementById('editor-app')!.inert = true; apiKeyInput.focus();
+    aiSettingsModal.classList.add('show'); document.getElementById('editor-app')!.inert = true; (aiModelSelect ?? btnCloseAiSettings).focus();
   }
 
-  function closeApiKeyModal() {
-    apiKeyModal.classList.remove('show'); document.getElementById('editor-app')!.inert = false; modalTrigger?.focus();
+  function closeAiSettings() {
+    aiSettingsModal.classList.remove('show'); document.getElementById('editor-app')!.inert = false; modalTrigger?.focus();
   }
 
-  document.getElementById('btn-apikey')?.addEventListener('click', openApiKeyModal);
-  btnCloseApiKey.addEventListener('click', closeApiKeyModal);
-  apiKeyModal.addEventListener('click', e => {
-    if (e.target === apiKeyModal) closeApiKeyModal();
+  document.getElementById('btn-ai-settings')?.addEventListener('click', openAiSettings);
+  btnCloseAiSettings.addEventListener('click', closeAiSettings);
+  aiSettingsModal.addEventListener('click', e => {
+    if (e.target === aiSettingsModal) closeAiSettings();
   });
 
-  apiKeyModal.addEventListener('keydown', event => {
-    if (event.key === 'Escape') { event.stopPropagation(); closeApiKeyModal(); }
+  aiSettingsModal.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.stopPropagation(); closeAiSettings(); }
     if (event.key === 'Tab') {
-      const controls = [...apiKeyModal.querySelectorAll<HTMLElement>('input, select, button, a')];
+      const controls = [...aiSettingsModal.querySelectorAll<HTMLElement>('input, select, button, a')];
       const first = controls[0], last = controls.at(-1)!;
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     }
   });
-  btnSaveApiKey.addEventListener('click', () => {
-    setStoredApiKey(apiKeyInput.value);
-    if (geminiModelSelect) {
-      setStoredModel(geminiModelSelect.value);
+  btnSaveAiSettings.addEventListener('click', () => {
+    if (aiModelSelect) {
+      setStoredModel(aiModelSelect.value);
     }
-    closeApiKeyModal();
-    updateEngineBadge();
-    const hasKey = Boolean(getStoredApiKey());
-    if (hasKey) {
-      aiStatus.className = 'ai-status visible success';
-      aiStatus.textContent = `${getStoredModel()} configured. The key is kept only until this tab reloads.`;
-      if (statusTimeout) clearTimeout(statusTimeout);
-      statusTimeout = setTimeout(() => aiStatus.classList.remove('visible'), 4000);
-    }
+    closeAiSettings();
+    showStatus('AI preferences saved.', 'success');
+    if (statusTimeout) clearTimeout(statusTimeout);
+    statusTimeout = setTimeout(() => aiStatus.classList.remove('visible'), 4000);
   });
 
   // Viewport HUD controls
@@ -635,7 +665,7 @@ export function initEditor() {
   // Global Keyboard Shortcuts
   window.addEventListener('keydown', e => {
     const target = e.target as HTMLElement;
-    if (apiKeyModal.classList.contains('show') || document.querySelector('dialog[open]')) return;
+    if (aiSettingsModal.classList.contains('show') || document.querySelector('dialog[open]')) return;
     if(e.key==='Escape' && isSolarOpen){toggleSolarPanel(false);hudSolarToggle?.focus();return;}
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
       return;

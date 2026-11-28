@@ -54,7 +54,7 @@ try {
   await page.locator('#btn-delivery').click(); await page.screenshot({path:'.impeccable/review/studio/delivery-desktop.png'});
   const downloadPromise=page.waitForEvent('download'); await page.locator('#delivery-package').click(); const zip=await readFile(await (await downloadPromise).path());
   assert.equal(zip.readUInt32LE(0),0x04034b50); for(const file of ['home.mopple','measurements.csv','plans/floor-plans.pdf','views/exterior.png'])assert.ok(zip.includes(Buffer.from(file)));
-  await page.locator('#delivery-share').click(); await page.waitForFunction(()=>document.querySelector('#delivery-link').value.includes('/share#home='));
+  await page.locator('#delivery-share').click(); await page.waitForFunction(()=>document.querySelector('#delivery-link').value.includes('/share#gz='));
   const share=await page.locator('#delivery-link').inputValue(); await page.locator('#delivery-dialog [data-close]').click();
   await page.setViewportSize({width:390,height:844}); await page.locator('[data-view="3d"]').click();
   await page.waitForFunction(() => { const canvas=document.querySelector('#pane-3d canvas'); return canvas && canvas.width>0 && canvas.height>0; });
@@ -67,6 +67,9 @@ try {
   await page.locator('#btn-delivery').click(); assert.equal(await page.locator('#delivery-dialog').evaluate(element=>element.scrollWidth>element.clientWidth),false);
   await page.screenshot({path:'.impeccable/review/studio/delivery-mobile.png'}); await page.locator('#delivery-dialog [data-close]').click();
   await page.goto(share,{waitUntil:'networkidle'}); assert.equal(await page.locator('#home-name').textContent(),'Your home'); assert.equal(await page.locator('#ai-prompt-input').count(),0);
+  // Legacy uncompressed links must keep opening: same page, bare-model #home= payload.
+  const legacyShare=base+'/share#home='+Buffer.from(JSON.stringify(initial)).toString('base64');
+  await page.goto(legacyShare,{waitUntil:'networkidle'}); assert.equal(await page.locator('#home-name').textContent(),'Your home'); assert.equal(await page.locator('#ai-prompt-input').count(),0);
   await page.goto(base+'/homes.html',{waitUntil:'networkidle'}); assert.ok(await page.locator('.home-preview img').count()>0); await page.locator('#homes-search').fill('nonexistent'); assert.equal(await page.locator('.home-row:visible').count(),0);
   await page.locator('#homes-search').fill(''); await page.screenshot({path:'.impeccable/review/studio/homes-mobile.png'});
   assert.deepEqual(aiRequests,[]); assert.deepEqual(errors,[]);
